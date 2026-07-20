@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+.venv/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Pytest / Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Workspace local de testes / dados
+workspace/
+*.log
+
+datasets/*
+!datasets/.gitkeep
+models/*
+!models/.gitkeep
+videos/*
+!videos/.gitkeep
+runs/*
