@@ -23,8 +23,8 @@ htmlcov/
 workspace/
 *.log
 
-datasets/*
-!datasets/.gitkeep
+dataset/*
+!dataset/.gitkeep
 models/*
 !models/.gitkeep
 videos/*
