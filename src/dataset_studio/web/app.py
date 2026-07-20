@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-import argparse
-import json
-import shutil
-import uvicorn
+import atexit
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from dataset_studio.adapters.label_studio.runner import (
+    start_label_studio_job,
+    start_ml_backend_job,
+    wait_for_port,
+)
 from dataset_studio.adapters.opencv.media import extract_campaign_frames
 from dataset_studio.application import (
     JobManager,
@@ -38,6 +41,21 @@ from dataset_studio.domain import (
 )
 
 job_manager = JobManager()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # Ao fechar o servidor do Dataset Studio, encerra os outros servidores (Label Studio e ML Backend)
+    job_manager.stop_all(wait=True)
+
+
+atexit.register(lambda: job_manager.stop_all(wait=False))
+
+
+class LabelStudioStartReq(BaseModel):
+    enable_ml: bool = False
+    model: str | None = None
 
 
 class CampaignCreateReq(BaseModel):
@@ -80,7 +98,7 @@ class TrainStartReq(BaseModel):
 
 
 def create_web_app(workspace: Workspace) -> FastAPI:
-    app = FastAPI(title="Dataset Studio Web Dashboard", version="0.1.0")
+    app = FastAPI(title="Dataset Studio Web Dashboard", version="0.1.0", lifespan=lifespan)
 
     @app.get("/", response_class=HTMLResponse)
     def index():
@@ -427,6 +445,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     <span id="step-2-status" class="text-xs font-semibold px-2.5 py-1 bg-slate-800 text-slate-400 rounded-md">Pendente</span>
                 </button>
                 <div id="step-2-body" class="p-5 border-t border-slate-800 bg-slate-950/40 space-y-5">
+                    <div id="step-2-locked-msg" class="hidden p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                        <span>🔒</span> Extração concluída. Esta etapa não pode mais ser alterada.
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <!-- Modo Uniforme -->
                         <div onclick="selectExtractionMode('uniform')" id="card-mode-uniform" class="p-4 bg-slate-800/60 border-2 border-indigo-500 rounded-xl cursor-pointer hover:bg-slate-800 transition space-y-2">
@@ -469,7 +491,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         </div>
 
                         <div>
-                            <button onclick="executeExtraction()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-indigo-600/30 transition">
+                            <button id="btn-extract" onclick="executeExtraction()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-indigo-600/30 transition">
                                 ▶ Executar Extração de Frames
                             </button>
                         </div>
@@ -490,6 +512,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     <span id="step-3-status" class="text-xs font-semibold px-2.5 py-1 bg-slate-800 text-slate-400 rounded-md">Pendente</span>
                 </button>
                 <div id="step-3-body" class="p-5 border-t border-slate-800 bg-slate-950/40 space-y-4 hidden">
+                    <div id="step-3-locked-msg" class="hidden p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                        <span>🔒</span> Pré-anotação concluída. Esta etapa não pode mais ser alterada.
+                    </div>
+
                     <p class="text-xs text-slate-300">
                         Nesta etapa, você decide se deseja usar um modelo para gerar pré-anotações automáticas nas imagens ou se deseja pular essa etapa (nenhuma imagem será anotada previamente).
                     </p>
@@ -512,7 +538,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         </div>
 
                         <div class="pt-2">
-                            <button onclick="executeBuildImport()" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-amber-600/30 transition">
+                            <button id="btn-build-import" onclick="executeBuildImport()" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-amber-600/30 transition">
                                 ▶ Gerar import_tasks.json
                             </button>
                         </div>
@@ -551,7 +577,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         </div>
 
                         <div>
-                            <button onclick="startLabelStudioService()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg shadow-md shadow-indigo-600/30 transition">
+                            <button id="btn-start-label-studio" onclick="startLabelStudioService()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg shadow-md shadow-indigo-600/30 transition">
                                 🚀 Iniciar Label Studio (+ ML Backend)
                             </button>
                         </div>
@@ -616,6 +642,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         const urlParams = new URLSearchParams(window.location.search);
         const campaignId = urlParams.get('id');
         let selectedMode = 'uniform';
+        let step2Locked = false;
+        let step3Locked = false;
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
 
         function toggleStep(stepNum) {
             const body = document.getElementById(`step-${stepNum}-body`);
@@ -623,6 +656,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         }
 
         function selectExtractionMode(mode) {
+            if (step2Locked) return;
             selectedMode = mode;
             const cardU = document.getElementById('card-mode-uniform');
             const cardS = document.getElementById('card-mode-smart');
@@ -643,6 +677,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         }
 
         function togglePreAnnotateOpt() {
+            if (step3Locked) return;
             const val = document.querySelector('input[name="pre_opt"]:checked').value;
             const sel = document.getElementById('pre-model-selector');
             if (val === 'model') {
@@ -660,6 +695,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         }
 
         async function executeExtraction() {
+            if (step2Locked) {
+                alert('A extração de frames já foi concluída e esta etapa não pode mais ser alterada.');
+                return;
+            }
             try {
                 const res = await fetch(`/api/campaigns/${campaignId}/extract`, { method: 'POST' });
                 const data = await res.json();
@@ -672,6 +711,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         }
 
         async function executeBuildImport() {
+            if (step3Locked) {
+                alert('A etapa de pré-anotação já foi concluída e não pode mais ser alterada.');
+                return;
+            }
             try {
                 const res = await fetch(`/api/campaigns/${campaignId}/import-tasks`, { method: 'POST' });
                 const data = await res.json();
@@ -684,7 +727,61 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         }
 
         async function startLabelStudioService() {
-            alert('Servidor Label Studio iniciado!');
+            const btn = document.getElementById('btn-start-label-studio');
+            const chkMl = document.getElementById('enable-ml-backend').checked;
+            const selModel = document.getElementById('ml-backend-model').value;
+
+            const originalText = btn ? btn.innerText : '🚀 Iniciar Label Studio (+ ML Backend)';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = '⏳ Aguardando servidor subir...';
+            }
+
+            // Abrir a página imediatamente em uma nova aba para evitar bloqueios de popup do navegador
+            const labelStudioTab = window.open('about:blank', '_blank');
+            if (labelStudioTab) {
+                labelStudioTab.document.write(`
+                    <!DOCTYPE html>
+                    <html lang="pt-BR" style="background:#0f172a;color:#f8fafc;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+                    <head><title>Carregando Label Studio...</title></head>
+                    <body style="text-align:center;">
+                        <h2 style="color:#818cf8;">🚀 Iniciando servidor do Label Studio...</h2>
+                        <p style="color:#94a3b8;">A página será aberta automaticamente assim que o servidor estiver pronto.</p>
+                    </body>
+                    </html>
+                `);
+            }
+
+            try {
+                const res = await fetch(`/api/campaigns/${campaignId}/start-label-studio`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_ml: chkMl, model: selModel })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao iniciar servidor do Label Studio.');
+
+                if (data.url) {
+                    if (labelStudioTab) {
+                        labelStudioTab.location.href = data.url;
+                    } else {
+                        window.open(data.url, '_blank');
+                    }
+                }
+
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = '🚀 Abrir Label Studio (Servidor Ativo)';
+                    btn.className = "px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg shadow-md shadow-emerald-600/30 transition";
+                }
+            } catch (err) {
+                if (labelStudioTab) labelStudioTab.close();
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
+                alert(err.message);
+            }
         }
 
         function createReleaseFromCampaign() {
@@ -707,19 +804,93 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 document.getElementById('camp-subtitle').innerText = `Vídeos: ${st.videos} | Frames Extraídos: ${st.frames} | Import Tasks: ${st.import_tasks}`;
                 document.getElementById('camp-status-badge').innerText = `Etapa: ${st.next_action}`;
 
-                // Etapa 1
-                document.getElementById('step-1-videos').innerText = `✓ ${st.videos} arquivo(s) de vídeo associado(s) à campanha.`;
+                // Etapa 1 - Lista Detalhada de Vídeos
+                if (st.video_details && st.video_details.length > 0) {
+                    const listHtml = `
+                        <div class="text-xs text-emerald-400 font-semibold mb-3">
+                            ✓ ${st.videos} arquivo(s) de vídeo associado(s) à campanha:
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs text-slate-300 font-sans border border-slate-800/80 rounded-lg overflow-hidden">
+                                <thead class="bg-slate-800/80 text-slate-400 uppercase text-[10px] font-mono">
+                                    <tr>
+                                        <th class="p-2.5 border-b border-slate-800">Arquivo</th>
+                                        <th class="p-2.5 border-b border-slate-800">Tamanho</th>
+                                        <th class="p-2.5 border-b border-slate-800">Resolução</th>
+                                        <th class="p-2.5 border-b border-slate-800">Framerate (FPS)</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-800/60 font-mono">
+                                    ${st.video_details.map(v => `
+                                        <tr class="hover:bg-slate-800/40 transition">
+                                            <td class="p-2.5 font-medium text-slate-200">${escapeHtml(v.name)}</td>
+                                            <td class="p-2.5 text-slate-400">${escapeHtml(v.size_human)}</td>
+                                            <td class="p-2.5 text-indigo-300">${escapeHtml(v.resolution)}</td>
+                                            <td class="p-2.5 text-slate-300">${v.fps > 0 ? v.fps + ' fps' : 'N/A'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                    document.getElementById('step-1-videos').innerHTML = listHtml;
+                } else {
+                    document.getElementById('step-1-videos').innerText = `✓ ${st.videos} arquivo(s) de vídeo associado(s) à campanha.`;
+                }
 
-                // Etapa 2 & 3
+                // Etapa 2 & 3 (Bloqueio ao concluir)
                 if (st.frames > 0) {
+                    step2Locked = true;
                     document.getElementById('step-2-status').className = "text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-md";
                     document.getElementById('step-2-status').innerText = "✓ Concluído";
                     document.getElementById('step-3-body').classList.remove('hidden');
+
+                    // Desabilitar controles da Etapa 2
+                    document.getElementById('extract-step').disabled = true;
+                    document.getElementById('extract-model').disabled = true;
+
+                    const cardU = document.getElementById('card-mode-uniform');
+                    const cardS = document.getElementById('card-mode-smart');
+                    if (cardU) {
+                        cardU.onclick = null;
+                        cardU.classList.remove('cursor-pointer');
+                        cardU.classList.add('cursor-not-allowed', 'opacity-75');
+                    }
+                    if (cardS) {
+                        cardS.onclick = null;
+                        cardS.classList.remove('cursor-pointer');
+                        cardS.classList.add('cursor-not-allowed', 'opacity-75');
+                    }
+
+                    const btnExtract = document.getElementById('btn-extract');
+                    if (btnExtract) {
+                        btnExtract.disabled = true;
+                        btnExtract.className = "px-5 py-2.5 bg-slate-800 text-slate-500 font-medium text-xs rounded-lg cursor-not-allowed border border-slate-700/50";
+                        btnExtract.innerText = "🔒 Extração Concluída";
+                    }
+                    const msg2 = document.getElementById('step-2-locked-msg');
+                    if (msg2) msg2.classList.remove('hidden');
                 }
+
                 if (st.import_tasks > 0) {
+                    step3Locked = true;
                     document.getElementById('step-3-status').className = "text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-md";
                     document.getElementById('step-3-status').innerText = "✓ Concluído";
                     document.getElementById('step-4-body').classList.remove('hidden');
+
+                    // Desabilitar controles da Etapa 3
+                    document.getElementById('pre-none').disabled = true;
+                    document.getElementById('pre-model').disabled = true;
+                    document.getElementById('pre-model-dropdown').disabled = true;
+
+                    const btnBuild = document.getElementById('btn-build-import');
+                    if (btnBuild) {
+                        btnBuild.disabled = true;
+                        btnBuild.className = "px-5 py-2.5 bg-slate-800 text-slate-500 font-medium text-xs rounded-lg cursor-not-allowed border border-slate-700/50";
+                        btnBuild.innerText = "🔒 import_tasks.json Gerado";
+                    }
+                    const msg3 = document.getElementById('step-3-locked-msg');
+                    if (msg3) msg3.classList.remove('hidden');
                 }
 
                 // finished_tasks info
@@ -1183,6 +1354,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
     @app.post("/api/campaigns/{campaign_id}/extract")
     def api_extract_frames(campaign_id: str):
         try:
+            st = campaign_status(workspace, campaign_id)
+            if st.get("frames", 0) > 0:
+                raise WorkflowError("A segunda etapa (extração de frames) já foi concluída e não pode ser alterada.")
             manifest_path = extract_campaign_frames(workspace, campaign_id)
             return {"status": "ok", "manifest": str(manifest_path)}
         except WorkflowError as exc:
@@ -1191,9 +1365,38 @@ def create_web_app(workspace: Workspace) -> FastAPI:
     @app.post("/api/campaigns/{campaign_id}/import-tasks")
     def api_build_import_tasks(campaign_id: str):
         try:
+            st = campaign_status(workspace, campaign_id)
+            if st.get("import_tasks", 0) > 0:
+                raise WorkflowError("A terceira etapa (geração do import_tasks.json) já foi concluída e não pode ser alterada.")
             output = build_import_tasks(workspace, campaign_id)
             return {"status": "ok", "output": str(output)}
         except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/campaigns/{campaign_id}/start-label-studio")
+    def api_start_label_studio(
+        campaign_id: str,
+        req: LabelStudioStartReq = Body(default_factory=LabelStudioStartReq),
+    ):
+        try:
+            load_campaign(workspace, campaign_id)
+            ls_job = start_label_studio_job(job_manager, workspace, campaign_id, port=8080)
+            ml_job = None
+            if req.enable_ml:
+                ml_job = start_ml_backend_job(
+                    job_manager, workspace, campaign_id, model_name=req.model, port=9090
+                )
+                wait_for_port(9090, timeout=8.0)
+
+            online = wait_for_port(8080, timeout=10.0)
+            return {
+                "status": "ok",
+                "online": online,
+                "url": "http://127.0.0.1:8080",
+                "ls_job": ls_job if isinstance(ls_job, dict) else None,
+                "ml_job": ml_job if isinstance(ml_job, dict) else None,
+            }
+        except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @app.post("/api/campaigns/{campaign_id}/accept-export")

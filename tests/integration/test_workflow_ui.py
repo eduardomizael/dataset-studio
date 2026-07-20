@@ -119,8 +119,101 @@ def test_web_app_endpoints(tmp_path: Path):
 
     resp_status = client.get("/api/campaigns/web_campaign")
     assert resp_status.status_code == 200
-    assert resp_status.json()["campaign_id"] == "web_campaign"
+    st_data = resp_status.json()
+    assert st_data["campaign_id"] == "web_campaign"
+    assert "video_details" in st_data
+    assert len(st_data["video_details"]) == 1
+    assert st_data["video_details"][0]["name"] == "capture.mp4"
+    assert "size_human" in st_data["video_details"][0]
+    assert "resolution" in st_data["video_details"][0]
+    assert "fps" in st_data["video_details"][0]
 
     index = client.get("/")
     assert index.status_code == 200
     assert "Dataset Studio" in index.text
+
+
+def test_completed_steps_locking(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    app = create_web_app(ws)
+    client = TestClient(app)
+
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    (videos / "video1.mp4").write_bytes(b"dummy video data")
+
+    client.post(
+        "/api/campaigns",
+        json={
+            "campaign_id": "locked_campaign",
+            "videos_dir": str(videos),
+            "video_files": ["video1.mp4"],
+            "classes": ["peixe"],
+        },
+    )
+
+    # Simular Etapa 2 Concluída criando manifesto
+    camp_dir = ws.campaign_root("locked_campaign")
+    (camp_dir / "frame_manifest.json").write_text(
+        json.dumps({"frames": [{"frame_id": "f1", "image": "f1.jpg", "source_video": "video1.mp4", "frame_index": 0, "width": 100, "height": 100}]}),
+        encoding="utf-8"
+    )
+
+    # Tentativa de re-executar Etapa 2 deve retornar 400
+    resp_ext = client.post("/api/campaigns/locked_campaign/extract")
+    assert resp_ext.status_code == 400
+    assert "já foi concluída" in resp_ext.json()["detail"]
+
+    # Simular Etapa 3 Concluída criando import_tasks.json
+    (camp_dir / "label_studio").mkdir(parents=True, exist_ok=True)
+    (camp_dir / "label_studio" / "import_tasks.json").write_text(
+        json.dumps([{"id": 1}]), encoding="utf-8"
+    )
+
+    # Tentativa de re-executar Etapa 3 deve retornar 400
+    resp_imp = client.post("/api/campaigns/locked_campaign/import-tasks")
+    assert resp_imp.status_code == 400
+    assert "já foi concluída" in resp_imp.json()["detail"]
+
+
+def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path):
+    from dataset_studio.web.app import job_manager
+
+    ws = Workspace.from_path(tmp_path)
+    app = create_web_app(ws)
+    client = TestClient(app)
+
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    (videos / "sample.mp4").write_bytes(b"sample video data")
+
+    client.post(
+        "/api/campaigns",
+        json={
+            "campaign_id": "ls_campaign",
+            "videos_dir": str(videos),
+            "video_files": ["sample.mp4"],
+            "classes": ["peixe"],
+        },
+    )
+
+    resp_start = client.post(
+        "/api/campaigns/ls_campaign/start-label-studio",
+        json={"enable_ml": True},
+    )
+    assert resp_start.status_code == 200
+    data = resp_start.json()
+    assert data["status"] == "ok"
+    assert data["url"] == "http://127.0.0.1:8080"
+    assert data["online"] is True
+
+    # Verificar que os jobs foram registrados e iniciados no JobManager
+    jobs = job_manager.list()
+    targets = [j["target"] for j in jobs]
+    assert "label-studio" in targets
+    assert "ml-backend" in targets
+
+    # Testar encerramento automático em lote (stop_all) ao desligar servidor
+    job_manager.stop_all(wait=True)
+    active = [j for j in job_manager.list() if j["status"] in {"running", "stopping"}]
+    assert len(active) == 0
