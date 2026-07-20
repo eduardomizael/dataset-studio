@@ -100,27 +100,28 @@ def test_web_app_endpoints(tmp_path: Path):
 
     videos = tmp_path / "videos"
     videos.mkdir()
-    (videos / "capture.mp4").write_bytes(b"video")
+    (videos / "capture.mp4").write_bytes(b"video content")
 
     resp_create = client.post(
-        "/api/campaigns",
+        "/api/sources",
         json={
-            "campaign_id": "web_campaign",
+            "source_id": "web_source",
             "videos_dir": str(videos),
             "video_files": ["capture.mp4"],
-            "classes": ["objeto"],
+            "classes": ["peixe"],
         },
     )
     assert resp_create.status_code == 200
+    assert resp_create.json()["status"] == "ok"
 
-    resp_list = client.get("/api/campaigns")
+    resp_list = client.get("/api/sources")
     assert resp_list.status_code == 200
-    assert "web_campaign" in resp_list.json()
+    assert "web_source" in resp_list.json()
 
-    resp_status = client.get("/api/campaigns/web_campaign")
+    resp_status = client.get("/api/sources/web_source")
     assert resp_status.status_code == 200
     st_data = resp_status.json()
-    assert st_data["campaign_id"] == "web_campaign"
+    assert st_data.get("source_id") == "web_source" or st_data.get("campaign_id") == "web_source"
     assert "video_details" in st_data
     assert len(st_data["video_details"]) == 1
     assert st_data["video_details"][0]["name"] == "capture.mp4"
@@ -143,9 +144,9 @@ def test_completed_steps_locking(tmp_path: Path):
     (videos / "video1.mp4").write_bytes(b"dummy video data")
 
     client.post(
-        "/api/campaigns",
+        "/api/sources",
         json={
-            "campaign_id": "locked_campaign",
+            "source_id": "locked_source",
             "videos_dir": str(videos),
             "video_files": ["video1.mp4"],
             "classes": ["peixe"],
@@ -153,25 +154,25 @@ def test_completed_steps_locking(tmp_path: Path):
     )
 
     # Simular Etapa 2 Concluída criando manifesto
-    camp_dir = ws.campaign_root("locked_campaign")
-    (camp_dir / "frame_manifest.json").write_text(
+    src_dir = ws.source_root("locked_source")
+    (src_dir / "frame_manifest.json").write_text(
         json.dumps({"frames": [{"frame_id": "f1", "image": "f1.jpg", "source_video": "video1.mp4", "frame_index": 0, "width": 100, "height": 100}]}),
         encoding="utf-8"
     )
 
     # Tentativa de re-executar Etapa 2 deve retornar 400
-    resp_ext = client.post("/api/campaigns/locked_campaign/extract")
+    resp_ext = client.post("/api/sources/locked_source/extract")
     assert resp_ext.status_code == 400
     assert "já foi concluída" in resp_ext.json()["detail"]
 
     # Simular Etapa 3 Concluída criando import_tasks.json
-    (camp_dir / "label_studio").mkdir(parents=True, exist_ok=True)
-    (camp_dir / "label_studio" / "import_tasks.json").write_text(
+    (src_dir / "label_studio").mkdir(parents=True, exist_ok=True)
+    (src_dir / "label_studio" / "import_tasks.json").write_text(
         json.dumps([{"id": 1}]), encoding="utf-8"
     )
 
     # Tentativa de re-executar Etapa 3 deve retornar 400
-    resp_imp = client.post("/api/campaigns/locked_campaign/import-tasks")
+    resp_imp = client.post("/api/sources/locked_source/import-tasks")
     assert resp_imp.status_code == 400
     assert "já foi concluída" in resp_imp.json()["detail"]
 
@@ -188,9 +189,9 @@ def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path):
     (videos / "sample.mp4").write_bytes(b"sample video data")
 
     client.post(
-        "/api/campaigns",
+        "/api/sources",
         json={
-            "campaign_id": "ls_campaign",
+            "source_id": "ls_source",
             "videos_dir": str(videos),
             "video_files": ["sample.mp4"],
             "classes": ["peixe"],
@@ -198,7 +199,7 @@ def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path):
     )
 
     resp_start = client.post(
-        "/api/campaigns/ls_campaign/start-label-studio",
+        "/api/sources/ls_source/start-label-studio",
         json={"enable_ml": True},
     )
     assert resp_start.status_code == 200

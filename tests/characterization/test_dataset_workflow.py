@@ -164,8 +164,8 @@ def native_export(
 
 def test_workspace_abstraction(tmp_path: Path):
     ws = Workspace.from_path(tmp_path)
-    assert ws.campaigns_root == tmp_path / "dataset" / "campaigns"
-    assert ws.releases_root == tmp_path / "dataset" / "releases"
+    assert ws.sources_root == tmp_path / "dataset" / "sources"
+    assert ws.versions_root == tmp_path / "dataset" / "versions"
 
 
 def test_uniform_campaign_needs_no_detection_model(tmp_path: Path):

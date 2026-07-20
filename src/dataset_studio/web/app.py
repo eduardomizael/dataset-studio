@@ -20,7 +20,7 @@ from dataset_studio.adapters.label_studio.runner import (
     start_ml_backend_job,
     wait_for_port,
 )
-from dataset_studio.adapters.opencv.media import extract_campaign_frames
+from dataset_studio.adapters.opencv.media import extract_source_frames, extract_campaign_frames
 from dataset_studio.application import (
     JobManager,
     TrainingParams,
@@ -29,7 +29,9 @@ from dataset_studio.application import (
     list_available_models,
     preview_split_metrics,
     release_status,
+    source_status,
     training_recipe,
+    version_status,
 )
 from dataset_studio.domain import (
     WorkflowError,
@@ -37,11 +39,17 @@ from dataset_studio.domain import (
     accept_native_export,
     build_import_tasks,
     build_release,
+    build_version,
     create_campaign,
     create_release,
+    create_source,
+    create_version,
     list_campaigns,
     list_releases,
+    list_sources,
+    list_versions,
     load_campaign,
+    load_source,
 )
 
 job_manager = JobManager()
@@ -62,12 +70,23 @@ class LabelStudioStartReq(BaseModel):
     model: str | None = None
 
 
-class CampaignCreateReq(BaseModel):
-    campaign_id: str
+class SourceCreateReq(BaseModel):
+    source_id: str | None = None
+    campaign_id: str | None = None
     videos_dir: str = "videos"
     video_pattern: str = "*.mp4"
     video_files: list[str] | None = None
     classes: list[str] = Field(default_factory=lambda: ["objeto"])
+
+    @property
+    def target_id(self) -> str:
+        val = self.source_id or self.campaign_id
+        if not val:
+            raise ValueError("Identificador da origem obrigatório.")
+        return val
+
+
+CampaignCreateReq = SourceCreateReq
 
 
 class ExportAcceptReq(BaseModel):
@@ -76,15 +95,35 @@ class ExportAcceptReq(BaseModel):
     allow_pending: bool = False
 
 
-class ReleaseCreateReq(BaseModel):
-    release_id: str
-    campaigns: list[str] = Field(min_length=1)
+class VersionCreateReq(BaseModel):
+    version_id: str | None = None
+    release_id: str | None = None
+    sources: list[str] | None = None
+    campaigns: list[str] | None = None
     assignments: dict[str, list[str]]
     annotation_revisions: dict[str, str] = Field(default_factory=dict)
 
+    @property
+    def target_id(self) -> str:
+        val = self.version_id or self.release_id
+        if not val:
+            raise ValueError("Identificador da versão obrigatório.")
+        return val
+
+    @property
+    def target_sources(self) -> list[str]:
+        val = self.sources or self.campaigns
+        if not val:
+            raise ValueError("Ao menos uma origem deve ser informada.")
+        return val
+
+
+ReleaseCreateReq = VersionCreateReq
+
 
 class SplitPreviewReq(BaseModel):
-    campaign_id: str
+    source_id: str | None = None
+    campaign_id: str | None = None
     assignments: dict[str, list[str]]
     revision_id: str | None = None
 
@@ -123,11 +162,11 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 mb-8 border-b border-slate-800 gap-4">
             <div>
                 <h1 class="text-3xl font-extrabold tracking-tight text-indigo-400">Dataset Studio</h1>
-                <p class="text-slate-400 text-sm mt-1">Gerenciamento autônomo do ciclo de vida de datasets para visão computacional</p>
+                <p class="text-slate-400 text-sm mt-1">Gerenciamento autônomo de Origens de dados, Versões e Treinamentos YOLO</p>
             </div>
             <div class="flex items-center gap-3">
                 <button onclick="openCreateCampaignModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-lg shadow-lg shadow-indigo-600/30 transition">
-                    + Nova Campanha
+                    + Nova Origem de Dados
                 </button>
                 <span class="px-3 py-1.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-lg text-xs font-mono">
                     Workspace: <span id="ws-root">...</span>
@@ -137,29 +176,29 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
         <!-- Layout 3 Colunas -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Coluna 1: Campanhas -->
+            <!-- Coluna 1: Origens -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-800">
                     <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
-                        <span>📁</span> Campanhas
+                        <span>📁</span> Origens de Dados
                     </h2>
                     <button onclick="loadData()" class="text-xs text-indigo-400 hover:underline">🔄 Atualizar</button>
                 </div>
                 <div id="campaigns-list" class="space-y-4">
-                    <p class="text-slate-500 text-sm">Carregando campanhas...</p>
+                    <p class="text-slate-500 text-sm">Carregando origens...</p>
                 </div>
             </div>
 
-            <!-- Coluna 2: Releases -->
+            <!-- Coluna 2: Versões -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-800">
                     <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
-                        <span>📦</span> Releases Materializadas
+                        <span>📦</span> Versões do Dataset
                     </h2>
                     <button onclick="loadData()" class="text-xs text-indigo-400 hover:underline">🔄 Atualizar</button>
                 </div>
                 <div id="releases-list" class="space-y-4">
-                    <p class="text-slate-500 text-sm">Carregando releases...</p>
+                    <p class="text-slate-500 text-sm">Carregando versões...</p>
                 </div>
             </div>
 
@@ -178,18 +217,18 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         </div>
     </div>
 
-    <!-- Modal Nova Campanha -->
+    <!-- Modal Nova Origem -->
     <div id="modal-campaign" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5">
             <div class="flex justify-between items-center pb-3 border-b border-slate-800">
-                <h3 class="text-lg font-bold text-indigo-400">Criar Nova Campanha</h3>
+                <h3 class="text-lg font-bold text-indigo-400">Criar Nova Origem de Dados</h3>
                 <button onclick="closeCreateCampaignModal()" class="text-slate-400 hover:text-white">✕</button>
             </div>
             
             <div class="space-y-4 text-sm">
                 <div>
-                    <label class="block text-slate-300 font-medium mb-1">ID da Campanha</label>
-                    <input type="text" id="input-campaign-id" placeholder="ex: campanha_01" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:border-indigo-500 focus:outline-none">
+                    <label class="block text-slate-300 font-medium mb-1">ID da Origem</label>
+                    <input type="text" id="input-campaign-id" placeholder="ex: origem_01" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:border-indigo-500 focus:outline-none">
                 </div>
                 
                 <div>
@@ -213,7 +252,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
             <div class="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button onclick="closeCreateCampaignModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-medium text-xs">Cancelar</button>
-                <button onclick="submitCreateCampaign()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium text-xs shadow-lg shadow-indigo-600/30">Criar Campanha</button>
+                <button onclick="submitCreateCampaign()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium text-xs shadow-lg shadow-indigo-600/30">Criar Origem de Dados</button>
             </div>
         </div>
     </div>
@@ -247,7 +286,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             const errDiv = document.getElementById('modal-error');
 
             if (!id) {
-                errDiv.innerText = 'Preencha o ID da campanha.';
+                errDiv.innerText = 'Preencha o ID da origem.';
                 errDiv.classList.remove('hidden');
                 return;
             }
@@ -260,6 +299,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             const classes = classesRaw ? classesRaw.split(',').map(c => c.trim()).filter(Boolean) : ['objeto'];
 
             const formData = new FormData();
+            formData.append('source_id', id);
             formData.append('campaign_id', id);
             formData.append('classes', JSON.stringify(classes));
             for (const file of filesInput.files) {
@@ -267,18 +307,18 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
 
             try {
-                errDiv.innerText = 'Enviando vídeos e criando campanha...';
+                errDiv.innerText = 'Enviando vídeos e criando origem...';
                 errDiv.classList.remove('hidden');
                 errDiv.classList.remove('text-rose-400');
                 errDiv.classList.add('text-indigo-400');
 
-                const res = await fetch('/api/campaigns/upload', {
+                const res = await fetch('/api/sources/upload', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
                 if (!res.ok) {
-                    throw new Error(data.detail || 'Erro ao criar campanha.');
+                    throw new Error(data.detail || 'Erro ao criar origem de dados.');
                 }
                 closeCreateCampaignModal();
                 loadData();
@@ -296,31 +336,32 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 const ws = await resW.json();
                 document.getElementById('ws-root').innerText = ws.root;
 
-                // Campanhas
-                const resC = await fetch('/api/campaigns');
-                const campaigns = await resC.json();
+                // Origens
+                const resC = await fetch('/api/sources');
+                const sources = await resC.json();
                 const divC = document.getElementById('campaigns-list');
                 
-                if (campaigns.length === 0) {
+                if (sources.length === 0) {
                     divC.innerHTML = `
                         <div class="text-center py-8 border border-dashed border-slate-800 rounded-xl">
-                            <p class="text-slate-400 text-sm font-medium">Nenhuma campanha criada ainda.</p>
+                            <p class="text-slate-400 text-sm font-medium">Nenhuma origem criada ainda.</p>
                             <button onclick="openCreateCampaignModal()" class="mt-3 text-xs text-indigo-400 font-semibold hover:underline">
-                                + Clique aqui para criar a primeira campanha
+                                + Clique aqui para criar a primeira origem
                             </button>
                         </div>
                     `;
                 } else {
                     let html = '';
-                    for (const cId of campaigns) {
-                        const resSt = await fetch(`/api/campaigns/${cId}`);
+                    for (const sId of sources) {
+                        const resSt = await fetch(`/api/sources/${sId}`);
                         const st = await resSt.json();
+                        const targetId = st.source_id || st.campaign_id;
                         
                         html += `
-                            <a href="/campaign.html?id=${st.campaign_id}" class="block p-5 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-indigo-500/50 hover:bg-slate-800/70 transition group">
+                            <a href="/source.html?id=${targetId}" class="block p-5 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-indigo-500/50 hover:bg-slate-800/70 transition group">
                                 <div class="flex justify-between items-start">
                                     <div>
-                                        <h3 class="font-bold text-indigo-300 text-lg group-hover:text-indigo-200">${st.campaign_id}</h3>
+                                        <h3 class="font-bold text-indigo-300 text-lg group-hover:text-indigo-200">${targetId}</h3>
                                         <div class="text-xs text-slate-400 mt-0.5">
                                             Vídeos: <span class="text-slate-200 font-mono">${st.videos}</span> | 
                                             Frames: <span class="text-slate-200 font-mono">${st.frames}</span> | 
@@ -340,18 +381,18 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     divC.innerHTML = html;
                 }
 
-                // Releases
-                const resR = await fetch('/api/releases');
-                const releases = await resR.json();
+                // Versões
+                const resR = await fetch('/api/versions');
+                const versions = await resR.json();
                 const divR = document.getElementById('releases-list');
 
-                if (releases.length === 0) {
-                    divR.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">Nenhuma release materializada ainda.</p>';
+                if (versions.length === 0) {
+                    divR.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">Nenhuma versão materializada ainda.</p>';
                 } else {
-                    divR.innerHTML = releases.map(r => `
-                        <a href="/release.html?id=${r}" class="block p-4 bg-slate-800/40 border border-slate-800 rounded-xl flex justify-between items-center hover:border-emerald-500/50 hover:bg-slate-800/70 transition group">
+                    divR.innerHTML = versions.map(v => `
+                        <a href="/version.html?id=${v}" class="block p-4 bg-slate-800/40 border border-slate-800 rounded-xl flex justify-between items-center hover:border-emerald-500/50 hover:bg-slate-800/70 transition group">
                             <div>
-                                <div class="font-bold text-emerald-400 group-hover:text-emerald-300">${r}</div>
+                                <div class="font-bold text-emerald-400 group-hover:text-emerald-300">${v}</div>
                                 <div class="text-xs text-slate-400">Clique para ver detalhes, splits e treinar</div>
                             </div>
                             <span class="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-xs font-semibold">Materializada &rarr;</span>
@@ -387,14 +428,15 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 </body>
 </html>"""
 
+    @app.get("/source.html", response_class=HTMLResponse)
     @app.get("/campaign.html", response_class=HTMLResponse)
-    def campaign_detail_page():
+    def source_detail_page():
         return """<!DOCTYPE html>
 <html lang="pt-BR" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dataset Studio - Detalhes da Campanha</title>
+    <title>Dataset Studio - Detalhes da Origem</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
@@ -406,8 +448,8 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         <header class="flex justify-between items-center pb-6 border-b border-slate-800">
             <div>
                 <a href="/" class="text-xs text-indigo-400 hover:underline mb-1 inline-block">&larr; Voltar para a Tela Inicial</a>
-                <h1 class="text-3xl font-extrabold tracking-tight text-indigo-400" id="camp-title">Campanha</h1>
-                <p class="text-slate-400 text-sm mt-1" id="camp-subtitle">Carregando informações da campanha...</p>
+                <h1 class="text-3xl font-extrabold tracking-tight text-indigo-400" id="camp-title">Origem de Dados</h1>
+                <p class="text-slate-400 text-sm mt-1" id="camp-subtitle">Carregando informações da origem...</p>
             </div>
             <span id="camp-status-badge" class="px-3 py-1.5 bg-slate-800 text-indigo-400 border border-indigo-500/30 rounded-lg text-xs font-semibold">
                 Status: ...
@@ -947,14 +989,15 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 </body>
 </html>"""
 
+    @app.get("/version.html", response_class=HTMLResponse)
     @app.get("/release.html", response_class=HTMLResponse)
-    def release_detail_page():
+    def version_detail_page():
         return """<!DOCTYPE html>
 <html lang="pt-BR" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dataset Studio - Detalhes da Release & Treinamento</title>
+    <title>Dataset Studio - Detalhes da Versão & Treinamento</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
@@ -966,7 +1009,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         <header class="flex justify-between items-center pb-6 border-b border-slate-800">
             <div>
                 <a href="/" class="text-xs text-indigo-400 hover:underline mb-1 inline-block">&larr; Voltar para a Tela Inicial</a>
-                <h1 class="text-3xl font-extrabold tracking-tight text-emerald-400" id="rel-title">Release</h1>
+                <h1 class="text-3xl font-extrabold tracking-tight text-emerald-400" id="rel-title">Versão do Dataset</h1>
                 <p class="text-slate-400 text-sm mt-1" id="rel-subtitle">Divisão de dataset por vídeos completos (sem vazamento) e treinamento</p>
             </div>
             <span id="rel-status-badge" class="px-3 py-1.5 bg-slate-800 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-semibold">
@@ -1266,8 +1309,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
     def api_workspace_info():
         return {
             "root": str(workspace.root),
-            "campaigns_root": str(workspace.campaigns_root),
-            "releases_root": str(workspace.releases_root),
+            "sources_root": str(workspace.sources_root),
+            "versions_root": str(workspace.versions_root),
+            "campaigns_root": str(workspace.sources_root),
+            "releases_root": str(workspace.versions_root),
             "videos_root": str(workspace.videos_root),
         }
 
@@ -1294,16 +1339,18 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 )
         return items
 
+    @app.get("/api/sources")
     @app.get("/api/campaigns")
-    def api_list_campaigns():
-        return list_campaigns(workspace)
+    def api_list_sources():
+        return list_sources(workspace)
 
+    @app.post("/api/sources")
     @app.post("/api/campaigns")
-    def api_create_campaign(req: CampaignCreateReq):
+    def api_create_source(req: SourceCreateReq):
         try:
-            path = create_campaign(
+            path = create_source(
                 workspace,
-                campaign_id=req.campaign_id,
+                source_id=req.target_id,
                 videos_dir=Path(req.videos_dir),
                 video_pattern=req.video_pattern,
                 video_files=req.video_files or None,
@@ -1313,13 +1360,18 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    @app.post("/api/sources/upload")
     @app.post("/api/campaigns/upload")
-    async def api_create_campaign_upload(
-        campaign_id: str = Form(...),
+    async def api_create_source_upload(
+        source_id: str = Form(None),
+        campaign_id: str = Form(None),
         classes: str = Form('["objeto"]'),
         videos: list[UploadFile] = File(...),
     ):
         try:
+            target_id = source_id or campaign_id
+            if not target_id:
+                raise HTTPException(status_code=400, detail="Identificador da origem obrigatório.")
             class_list = json.loads(classes)
             videos_dir = workspace.videos_root
             videos_dir.mkdir(parents=True, exist_ok=True)
@@ -1329,9 +1381,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 with dest.open("wb") as handle:
                     shutil.copyfileobj(file.file, handle)
                 video_filenames.append(file.filename)
-            path = create_campaign(
+            path = create_source(
                 workspace,
-                campaign_id=campaign_id,
+                source_id=target_id,
                 videos_dir=videos_dir,
                 video_pattern="*.mp4",
                 video_files=video_filenames,
@@ -1341,54 +1393,59 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.get("/api/campaigns/{campaign_id}")
-    def api_campaign_status(campaign_id: str):
+    @app.get("/api/sources/{source_id}")
+    @app.get("/api/campaigns/{source_id}")
+    def api_source_status(source_id: str):
         try:
-            return campaign_status(workspace, campaign_id)
+            return source_status(workspace, source_id)
         except WorkflowError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
-    @app.get("/api/campaigns/{campaign_id}/finished-tasks")
-    def api_inspect_finished_tasks(campaign_id: str):
+    @app.get("/api/sources/{source_id}/finished-tasks")
+    @app.get("/api/campaigns/{source_id}/finished-tasks")
+    def api_inspect_finished_tasks(source_id: str):
         try:
-            return inspect_finished_tasks(workspace, campaign_id)
+            return inspect_finished_tasks(workspace, source_id)
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.post("/api/campaigns/{campaign_id}/extract")
-    def api_extract_frames(campaign_id: str):
+    @app.post("/api/sources/{source_id}/extract")
+    @app.post("/api/campaigns/{source_id}/extract")
+    def api_extract_frames(source_id: str):
         try:
-            st = campaign_status(workspace, campaign_id)
+            st = source_status(workspace, source_id)
             if st.get("frames", 0) > 0:
                 raise WorkflowError("A segunda etapa (extração de frames) já foi concluída e não pode ser alterada.")
-            manifest_path = extract_campaign_frames(workspace, campaign_id)
+            manifest_path = extract_source_frames(workspace, source_id)
             return {"status": "ok", "manifest": str(manifest_path)}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.post("/api/campaigns/{campaign_id}/import-tasks")
-    def api_build_import_tasks(campaign_id: str):
+    @app.post("/api/sources/{source_id}/import-tasks")
+    @app.post("/api/campaigns/{source_id}/import-tasks")
+    def api_build_import_tasks(source_id: str):
         try:
-            st = campaign_status(workspace, campaign_id)
+            st = source_status(workspace, source_id)
             if st.get("import_tasks", 0) > 0:
                 raise WorkflowError("A terceira etapa (geração do import_tasks.json) já foi concluída e não pode ser alterada.")
-            output = build_import_tasks(workspace, campaign_id)
+            output = build_import_tasks(workspace, source_id)
             return {"status": "ok", "output": str(output)}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.post("/api/campaigns/{campaign_id}/start-label-studio")
+    @app.post("/api/sources/{source_id}/start-label-studio")
+    @app.post("/api/campaigns/{source_id}/start-label-studio")
     def api_start_label_studio(
-        campaign_id: str,
+        source_id: str,
         req: LabelStudioStartReq = Body(default_factory=LabelStudioStartReq),
     ):
         try:
-            load_campaign(workspace, campaign_id)
-            ls_job = start_label_studio_job(job_manager, workspace, campaign_id, port=8080)
+            load_source(workspace, source_id)
+            ls_job = start_label_studio_job(job_manager, workspace, source_id, port=8080)
             ml_job = None
             if req.enable_ml:
                 ml_job = start_ml_backend_job(
-                    job_manager, workspace, campaign_id, model_name=req.model, port=9090
+                    job_manager, workspace, source_id, model_name=req.model, port=9090
                 )
                 wait_for_port(9090, timeout=8.0)
 
@@ -1403,12 +1460,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.post("/api/campaigns/{campaign_id}/accept-export")
-    def api_accept_export(campaign_id: str, req: ExportAcceptReq):
+    @app.post("/api/sources/{source_id}/accept-export")
+    @app.post("/api/campaigns/{source_id}/accept-export")
+    def api_accept_export(source_id: str, req: ExportAcceptReq):
         try:
             accepted, report = accept_native_export(
                 workspace,
-                campaign_id,
+                source_id,
                 Path(req.path),
                 revision_id=req.revision_id,
                 allow_pending=req.allow_pending,
@@ -1417,24 +1475,30 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    @app.get("/api/versions")
     @app.get("/api/releases")
-    def api_list_releases():
-        return list_releases(workspace)
+    def api_list_versions():
+        return list_versions(workspace)
 
+    @app.post("/api/versions/preview-split")
     @app.post("/api/releases/preview-split")
     def api_preview_split(req: SplitPreviewReq):
         try:
-            return preview_split_metrics(workspace, req.campaign_id, req.assignments, req.revision_id)
+            src_id = req.source_id or req.campaign_id
+            if not src_id:
+                raise HTTPException(status_code=400, detail="Identificador da origem obrigatório.")
+            return preview_split_metrics(workspace, src_id, req.assignments, req.revision_id)
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    @app.post("/api/versions")
     @app.post("/api/releases")
-    def api_create_release(req: ReleaseCreateReq):
+    def api_create_version(req: VersionCreateReq):
         try:
-            path = create_release(
+            path = create_version(
                 workspace,
-                release_id=req.release_id,
-                campaign_ids=req.campaigns,
+                version_id=req.target_id,
+                source_ids=req.target_sources,
                 assignments=req.assignments,
                 annotation_revisions=req.annotation_revisions or None,
             )
@@ -1442,23 +1506,26 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.post("/api/releases/{release_id}/build")
-    def api_build_release(release_id: str):
+    @app.post("/api/versions/{version_id}/build")
+    @app.post("/api/releases/{version_id}/build")
+    def api_build_version(version_id: str):
         try:
-            manifest = build_release(workspace, release_id)
+            manifest = build_version(workspace, version_id)
             return {"status": "ok", "manifest": str(manifest)}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.get("/api/releases/{release_id}")
-    def api_release_status(release_id: str):
+    @app.get("/api/versions/{version_id}")
+    @app.get("/api/releases/{version_id}")
+    def api_version_status(version_id: str):
         try:
-            return release_status(workspace, release_id)
+            return version_status(workspace, version_id)
         except WorkflowError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
-    @app.post("/api/releases/{release_id}/start-train")
-    def api_start_train(release_id: str, req: TrainStartReq):
+    @app.post("/api/versions/{version_id}/start-train")
+    @app.post("/api/releases/{version_id}/start-train")
+    def api_start_train(version_id: str, req: TrainStartReq):
         try:
             params = TrainingParams(
                 model=req.model,
@@ -1471,15 +1538,15 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 lr0=req.lr0,
                 optimizer=req.optimizer,
                 project=str(workspace.root / "runs" / "detect"),
-                name=release_id,
+                name=version_id,
             )
-            recipe = training_recipe(workspace, release_id, params)
+            recipe = training_recipe(workspace, version_id, params)
             job = job_manager.start(
                 command=recipe["command"],
                 kind="training",
-                target=release_id,
+                target=version_id,
                 cwd=workspace.root,
-                log_path=workspace.root / "runs" / "detect" / release_id / "train.log",
+                log_path=workspace.root / "runs" / "detect" / version_id / "train.log",
             )
             return job
         except WorkflowError as exc:

@@ -40,69 +40,61 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
 
     subparsers = parser.add_subparsers(dest="command", help="Comandos disponíveis")
 
-    # Campaign commands
-    campaign_parser = subparsers.add_parser("campaign", help="Gerenciar campanhas")
-    campaign_sub = campaign_parser.add_subparsers(dest="subcommand")
+    # Source commands (Origens)
+    source_parser = subparsers.add_parser("source", aliases=["campaign"], help="Gerenciar Origens de dados")
+    source_sub = source_parser.add_subparsers(dest="subcommand")
 
-    # campaign create
-    cc = campaign_sub.add_parser("create", help="Criar nova campanha")
-    cc.add_argument("--id", required=True, help="ID único da campanha")
-    cc.add_argument("--videos-dir", type=Path, default=Path("videos"), help="Diretório de vídeos")
-    cc.add_argument("--pattern", default="*.mp4", help="Padrão glob de vídeos")
-    cc.add_argument("--classes", nargs="+", default=["objeto"], help="Lista de classes")
+    sc = source_sub.add_parser("create", help="Criar nova Origem de dados")
+    sc.add_argument("--id", required=True, help="ID único da Origem")
+    sc.add_argument("--videos-dir", type=Path, default=Path("videos"), help="Diretório de vídeos")
+    sc.add_argument("--pattern", default="*.mp4", help="Padrão glob de vídeos")
+    sc.add_argument("--classes", nargs="+", default=["objeto"], help="Lista de classes")
 
-    # campaign list
-    campaign_sub.add_parser("list", help="Listar campanhas")
+    source_sub.add_parser("list", help="Listar Origens de dados")
 
-    # campaign status
-    cs = campaign_sub.add_parser("status", help="Status da campanha")
-    cs.add_argument("--id", required=True, help="ID da campanha")
+    ss = source_sub.add_parser("status", help="Status da Origem")
+    ss.add_argument("--id", required=True, help="ID da Origem")
 
     # import tasks
     imp = subparsers.add_parser("build-import", help="Gerar tarefas para Label Studio")
-    imp.add_argument("--campaign", required=True, help="ID da campanha")
+    imp.add_argument("--source", "--campaign", dest="source", required=True, help="ID da Origem de dados")
 
     # revision accept
     rev = subparsers.add_parser("accept-revision", help="Aceitar revisão de anotação")
-    rev.add_argument("--campaign", required=True, help="ID da campanha")
+    rev.add_argument("--source", "--campaign", dest="source", required=True, help="ID da Origem de dados")
     rev.add_argument("--export", type=Path, required=True, help="JSON nativo exportado do Label Studio")
     rev.add_argument("--revision-id", default=None, help="ID da revisão")
     rev.add_argument("--allow-pending", action="store_true", help="Permite pendências como revisão parcial")
 
-    # release commands
-    release_parser = subparsers.add_parser("release", help="Gerenciar releases")
-    release_sub = release_parser.add_subparsers(dest="subcommand")
+    # Version commands (Versões)
+    version_parser = subparsers.add_parser("version", aliases=["release"], help="Gerenciar Versões do dataset")
+    version_sub = version_parser.add_subparsers(dest="subcommand")
 
-    # release create
-    rc = release_sub.add_parser("create", help="Criar nova release")
-    rc.add_argument("--id", required=True, help="ID único da release")
-    rc.add_argument("--campaigns", nargs="+", required=True, help="Campanhas a incluir")
-    rc.add_argument("--assignments-json", required=True, help="JSON de atribuição de vídeos aos splits")
+    vc = version_sub.add_parser("create", help="Criar nova Versão do dataset")
+    vc.add_argument("--id", required=True, help="ID único da Versão")
+    vc.add_argument("--sources", "--campaigns", dest="sources", nargs="+", required=True, help="Origens a incluir")
+    vc.add_argument("--assignments-json", required=True, help="JSON de atribuição de vídeos aos splits")
 
-    # release build
-    rb = release_sub.add_parser("build", help="Materializar release em disco")
-    rb.add_argument("--id", required=True, help="ID da release")
+    vb = version_sub.add_parser("build", help="Materializar Versão em disco")
+    vb.add_argument("--id", required=True, help="ID da Versão")
 
-    # release list
-    release_sub.add_parser("list", help="Listar releases")
+    version_sub.add_parser("list", help="Listar Versões do dataset")
 
-    # release status
-    rs = release_sub.add_parser("status", help="Status da release")
-    rs.add_argument("--id", required=True, help="ID da release")
+    vs = version_sub.add_parser("status", help="Status da Versão")
+    vs.add_argument("--id", required=True, help="ID da Versão")
 
-    # release train
-    rt = release_sub.add_parser("train", help="Configurar e treinar modelo a partir de uma release")
-    rt.add_argument("--id", required=True, help="ID da release")
-    rt.add_argument("--model", default="yolo26n.pt", help="Modelo YOLO de partida (.pt ou .yaml)")
-    rt.add_argument("--epochs", type=int, default=50, help="Número de épocas")
-    rt.add_argument("--imgsz", type=int, default=640, help="Tamanho da imagem")
-    rt.add_argument("--batch", type=int, default=-1, help="Tamanho do batch")
-    rt.add_argument("--workers", type=int, default=0, help="Número de workers")
-    rt.add_argument("--device", default="auto", help="Dispositivo (auto, cpu, 0, etc.)")
-    rt.add_argument("--patience", type=int, default=50, help="Épocas de paciência (early stopping)")
-    rt.add_argument("--lr0", type=float, default=0.01, help="Taxa de aprendizado inicial")
-    rt.add_argument("--optimizer", default="auto", help="Otimizador")
-    rt.add_argument("--dry-run", action="store_true", help="Mostra a receita e o comando de treino sem executar")
+    vt = version_sub.add_parser("train", help="Configurar e treinar modelo a partir de uma Versão")
+    vt.add_argument("--id", required=True, help="ID da Versão")
+    vt.add_argument("--model", default="yolo26n.pt", help="Modelo YOLO de partida (.pt ou .yaml)")
+    vt.add_argument("--epochs", type=int, default=50, help="Número de épocas")
+    vt.add_argument("--imgsz", type=int, default=640, help="Tamanho da imagem")
+    vt.add_argument("--batch", type=int, default=-1, help="Tamanho do batch")
+    vt.add_argument("--workers", type=int, default=0, help="Número de workers")
+    vt.add_argument("--device", default="auto", help="Dispositivo (auto, cpu, 0, etc.)")
+    vt.add_argument("--patience", type=int, default=50, help="Épocas de paciência (early stopping)")
+    vt.add_argument("--lr0", type=float, default=0.01, help="Taxa de aprendizado inicial")
+    vt.add_argument("--optimizer", default="auto", help="Otimizador")
+    vt.add_argument("--dry-run", action="store_true", help="Mostra a receita e o comando de treino sem executar")
 
     return parser.parse_args(args)
 
@@ -111,59 +103,59 @@ def main(args: list[str] | None = None) -> None:
     parsed = parse_args(args)
     ws = Workspace.from_path(parsed.workspace)
 
-    if parsed.command == "campaign":
+    if parsed.command in {"source", "campaign"}:
         if parsed.subcommand == "create":
-            path = create_campaign(
+            path = create_source(
                 ws,
-                campaign_id=parsed.id,
+                source_id=parsed.id,
                 videos_dir=parsed.videos_dir,
                 video_pattern=parsed.pattern,
                 annotation={"classes": parsed.classes},
             )
-            print(f"[OK] Campanha criada em: {path}")
+            print(f"[OK] Origem criada em: {path}")
         elif parsed.subcommand == "list":
-            campaigns = list_campaigns(ws)
-            print("Campanhas disponíveis:")
-            for c in campaigns:
-                print(f" - {c}")
+            sources = list_sources(ws)
+            print("Origens de dados disponíveis:")
+            for s in sources:
+                print(f" - {s}")
         elif parsed.subcommand == "status":
-            st = campaign_status(ws, parsed.id)
+            st = source_status(ws, parsed.id)
             print(json.dumps(st, indent=2, ensure_ascii=False))
 
     elif parsed.command == "build-import":
-        output = build_import_tasks(ws, parsed.campaign)
+        output = build_import_tasks(ws, parsed.source)
         print(f"[OK] Import tasks gerado em: {output}")
 
     elif parsed.command == "accept-revision":
         accepted, report_path = accept_native_export(
             ws,
-            parsed.campaign,
+            parsed.source,
             parsed.export,
             revision_id=parsed.revision_id,
             allow_pending=parsed.allow_pending,
         )
         print(f"[OK] Revisão aceita em: {accepted}")
 
-    elif parsed.command == "release":
+    elif parsed.command in {"version", "release"}:
         if parsed.subcommand == "create":
             assignments = json.loads(parsed.assignments_json)
-            path = create_release(
+            path = create_version(
                 ws,
-                release_id=parsed.id,
-                campaign_ids=parsed.campaigns,
+                version_id=parsed.id,
+                source_ids=parsed.sources,
                 assignments=assignments,
             )
-            print(f"[OK] Release configurada em: {path}")
+            print(f"[OK] Versão configurada em: {path}")
         elif parsed.subcommand == "build":
-            manifest = build_release(ws, parsed.id)
-            print(f"[OK] Release materializada com manifesto: {manifest}")
+            manifest = build_version(ws, parsed.id)
+            print(f"[OK] Versão materializada com manifesto: {manifest}")
         elif parsed.subcommand == "list":
-            releases = list_releases(ws)
-            print("Releases disponíveis:")
-            for r in releases:
-                print(f" - {r}")
+            versions = list_versions(ws)
+            print("Versões do dataset disponíveis:")
+            for v in versions:
+                print(f" - {v}")
         elif parsed.subcommand == "status":
-            st = release_status(ws, parsed.id)
+            st = version_status(ws, parsed.id)
             print(json.dumps(st, indent=2, ensure_ascii=False))
         elif parsed.subcommand == "train":
             params = TrainingParams(

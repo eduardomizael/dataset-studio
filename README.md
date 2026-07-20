@@ -18,10 +18,10 @@ A aplicação iniciará o servidor local e abrirá automaticamente o navegador n
 
 ## 📚 Documentação Oficial
 
-Toda a documentação do projeto está disponível na pasta [`docs/`](file:///c:/Users/suporte/Desktop/fish-detection/dataset-studio/docs):
+Toda a documentação do projeto está disponível na pasta [`docs/`](docs/):
 
-1. 📖 **[Manual do Usuário](docs/USER_MANUAL.md)**: Guia passo-a-passo sobre como criar campanhas, extrair frames (modo uniforme ou inteligente), integrar com o Label Studio, calcular splits em tempo real e treinar modelos YOLO.
-2. 📐 **[Estrutura e Arquitetura](docs/ARCHITECTURE_AND_STRUCTURE.md)**: Mapeamento completo dos diretórios do repositório, Clean Architecture (Domínio, Aplicação, Adaptadores) e fluxo de dados no workspace (`campaigns/`, `releases/`, `models/`, `runs/`).
+1. 📖 **[Manual do Usuário](docs/USER_MANUAL.md)**: Guia passo-a-passo sobre como criar Origens de dados (`sources`), extrair frames (modo uniforme ou inteligente), integrar com o Label Studio, gerar Versões (`versions`) com splits sem vazamento de mídias e treinar modelos YOLO.
+2. 📐 **[Estrutura e Arquitetura](docs/ARCHITECTURE_AND_STRUCTURE.md)**: Mapeamento completo dos diretórios do repositório, Clean Architecture (Domínio, Aplicação, Adaptadores) e fluxo de dados no workspace (`dataset/sources/`, `dataset/versions/`, `models/`, `runs/`).
 3. 📝 **[Checklist de Documentação (TODO)](docs/DOCUMENTATION_TODO.md)**: Backlog de tarefas de documentação do projeto.
 
 ---
