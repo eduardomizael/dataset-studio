@@ -9,13 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from dataset_studio.domain.campaigns import (
+from dataset_studio.domain.sources import (
     annotation_report_path,
     annotation_revision_export_path,
     annotation_revision_report_path,
     export_annotations_path,
-    load_campaign,
     load_frame_manifest,
+    load_source as load_campaign,
 )
 from dataset_studio.domain.errors import WorkflowError
 from dataset_studio.domain.workspace import (

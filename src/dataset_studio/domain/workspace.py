@@ -75,12 +75,20 @@ class Workspace:
         return p if p.is_absolute() else (self.root / p).resolve()
 
     @property
+    def sources_root(self) -> Path:
+        return self.root / "dataset" / "sources"
+
+    @property
+    def versions_root(self) -> Path:
+        return self.root / "dataset" / "versions"
+
+    @property
     def campaigns_root(self) -> Path:
-        return self.root / "dataset" / "campaigns"
+        return self.sources_root
 
     @property
     def releases_root(self) -> Path:
-        return self.root / "dataset" / "releases"
+        return self.versions_root
 
     @property
     def videos_root(self) -> Path:
@@ -94,24 +102,38 @@ class Workspace:
     def config_root(self) -> Path:
         return self.root / "config"
 
+    def source_root(self, source_id: str) -> Path:
+        return self.sources_root / source_id
+
+    def version_root(self, version_id: str) -> Path:
+        return self.versions_root / version_id
+
     def campaign_root(self, campaign_id: str) -> Path:
-        return self.campaigns_root / campaign_id
+        return self.source_root(campaign_id)
 
     def release_root(self, release_id: str) -> Path:
-        return self.releases_root / release_id
+        return self.version_root(release_id)
+
+    def source_config_path(self, source_id: str) -> Path:
+        return self.source_root(source_id) / "source.yaml"
+
+    def version_config_path(self, version_id: str) -> Path:
+        return self.version_root(version_id) / "version.yaml"
 
     def campaign_config_path(self, campaign_id: str) -> Path:
-        return self.campaign_root(campaign_id) / "campaign.yaml"
+        return self.source_config_path(campaign_id)
 
     def release_config_path(self, release_id: str) -> Path:
-        return self.release_root(release_id) / "release.yaml"
+        return self.version_config_path(release_id)
 
     def defaults_dict(self, classes: list[str] | None = None) -> dict[str, Any]:
         """Gera dicionário de defaults para retrocompatibilidade."""
         return {
             "paths": {
-                "campaigns_root": self.campaigns_root,
-                "releases_root": self.releases_root,
+                "sources_root": self.sources_root,
+                "versions_root": self.versions_root,
+                "campaigns_root": self.sources_root,
+                "releases_root": self.versions_root,
                 "videos_root": self.videos_root,
                 "models_root": self.models_root,
             },
