@@ -25,6 +25,8 @@ def preview_split_metrics(
     assignments: dict[str, list[str]],
     revision_id: str | None = None,
 ) -> dict[str, Any]:
+    """Calcula a prévia das métricas de contagem (vídeos, frames e boxes) para cada split."""
+
     revisions = list_annotation_revisions(ws, source_id)
     target_rev = revision_id or (revisions[-1] if revisions else None)
     if not target_rev:
@@ -56,6 +58,8 @@ def preview_split_metrics(
 
 
 def training_recipe(ws: Workspace, version_id: str, params: TrainingParams | None = None) -> dict[str, Any]:
+    """Prepara o comando de treinamento e parâmetros para execução de uma versão de dataset."""
+
     root = version_root(ws, version_id)
     data_yaml = root / "data.yaml"
     if not data_yaml.exists():
@@ -76,6 +80,8 @@ def training_recipe(ws: Workspace, version_id: str, params: TrainingParams | Non
 
 
 def version_status(ws: Workspace, version_id: str) -> dict[str, Any]:
+    """Retorna o status completo e relatório de materialização de uma versão de dataset."""
+
     config = load_yaml(version_config_path(ws, version_id))
     root = version_root(ws, version_id)
     report_path = root / "build_report.json"

@@ -29,11 +29,14 @@ from dataset_studio.domain.workspace import (
 
 @dataclass(frozen=True)
 class AnnotationFrame:
+    """Representa a estrutura anotada de um frame específico do dataset."""
+
     frame_id: str
     boxes: tuple[str, ...]
     is_negative: bool
     excluded: bool = False
     exclusion_reason: str | None = None
+
 
 
 def _select_human_annotation(
@@ -146,6 +149,18 @@ def parse_native_export(
     *,
     allow_pending: bool = False,
 ) -> tuple[dict[str, AnnotationFrame], dict[str, Any]]:
+    """Realiza o parsing do arquivo JSON de exportação nativa do Label Studio.
+
+    Args:
+        defaults_or_ws: Objeto Workspace ou dicionário de configurações.
+        campaign_id: Identificador da campanha/fonte de dados.
+        export_path: Caminho para o arquivo JSON de exportação.
+        allow_pending: Se True, tolera tarefas pendentes de anotação.
+
+    Returns:
+        Tupla contendo o dicionário de frames anotados e o relatório estatístico.
+    """
+
     campaign = load_campaign(defaults_or_ws, campaign_id)
     manifest = load_frame_manifest(defaults_or_ws, campaign_id)
     expected = {frame["frame_id"]: frame for frame in manifest["frames"]}
@@ -277,6 +292,18 @@ def inspect_native_export(
     *,
     allow_pending: bool = False,
 ) -> dict[str, Any]:
+    """Inspeciona e valida a integridade de um arquivo JSON de exportação de anotações.
+
+    Args:
+        defaults_or_ws: Objeto Workspace ou dicionário de configurações.
+        campaign_id: Identificador da fonte de dados.
+        export_path: Caminho do arquivo JSON a ser inspecionado.
+        allow_pending: Se True, ignora tarefas não finalizadas.
+
+    Returns:
+        Dicionário com o relatório de inspeção e métricas detectadas.
+    """
+
     campaign = load_campaign(defaults_or_ws, campaign_id)
     manifest = load_frame_manifest(defaults_or_ws, campaign_id)
     expected = {frame["frame_id"]: frame for frame in manifest["frames"]}
@@ -538,6 +565,19 @@ def accept_native_export(
     revision_id: str | None = None,
     allow_pending: bool = False,
 ) -> tuple[Path, Path]:
+    """Valida, aceita e registra uma revisão final de exportação de anotações.
+
+    Args:
+        defaults_or_ws: Instância do Workspace ou dicionário de diretórios.
+        campaign_id: Identificador da campanha.
+        source: Caminho do arquivo JSON contendo as anotações a aceitar.
+        revision_id: Identificador da revisão. Se None, é gerado um timestamp.
+        allow_pending: Permite aceitação com tarefas incompletas.
+
+    Returns:
+        Tupla com os caminhos da cópia de exportação aceita e seu relatório JSON.
+    """
+
     source = (
         source
         if source.is_absolute()

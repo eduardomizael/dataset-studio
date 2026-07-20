@@ -16,6 +16,8 @@ VALID_REGION_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def default_database_path() -> Path:
+    """Localiza o caminho padrão da base SQLite3 do Label Studio no sistema Windows."""
+
     local_app_data = os.environ.get("LOCALAPPDATA")
     if not local_app_data:
         raise RuntimeError("LOCALAPPDATA não está definido.")
@@ -28,11 +30,15 @@ def default_database_path() -> Path:
 
 
 def safe_region_id(scope: str, original_id: str) -> str:
+    """Gera um ID seguro de região compativel com o Label Studio a partir do hash do ID original."""
+
     digest = hashlib.sha1(f"{scope}:{original_id}".encode("utf-8")).hexdigest()[:20]
     return f"region_{digest}"
 
 
 def repair_result(raw_result: str | None, scope: str) -> tuple[str | None, int]:
+    """Repara e substitui IDs inválidos de região em um campo de resultado do banco de dados."""
+
     if not raw_result:
         return raw_result, 0
     result = json.loads(raw_result)

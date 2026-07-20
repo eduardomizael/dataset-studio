@@ -25,6 +25,8 @@ from dataset_studio.domain import (
 
 
 def inspect_finished_tasks(ws: Workspace, source_id: str) -> dict[str, Any]:
+    """Inspeciona a pasta finished_tasks buscando por relatórios de tarefas recém-anotadas."""
+
     finished_dir = ws.source_root(source_id) / "label_studio" / "finished_tasks"
     finished_dir.mkdir(parents=True, exist_ok=True)
     json_files = sorted(finished_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -56,6 +58,8 @@ def inspect_finished_tasks(ws: Workspace, source_id: str) -> dict[str, Any]:
 
 
 def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
+    """Retorna o estado detalhado do pipeline e das etapas de uma fonte de dados."""
+
     source = load_source(ws, source_id)
     annotation = source["annotation"]
     annotation_backend = annotation.get("backend") or (
@@ -158,6 +162,8 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
 
 
 def list_available_models(ws: Workspace) -> list[str]:
+    """Lista os modelos YOLO (.pt) disponíveis no diretório de modelos do workspace."""
+
     models_dir = ws.models_root
     if not models_dir.exists():
         return []

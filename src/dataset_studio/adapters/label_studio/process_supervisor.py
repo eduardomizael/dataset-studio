@@ -10,6 +10,8 @@ from typing import Any
 
 
 def process_group_options(*, hidden: bool = True) -> dict[str, Any]:
+    """Retorna flags de criação de subprocesso adequadas para isolamento de grupo por SO."""
+
     options: dict[str, Any] = {}
     if sys.platform == "win32":
         creationflags = 0
@@ -23,6 +25,8 @@ def process_group_options(*, hidden: bool = True) -> dict[str, Any]:
 
 
 def terminate_process_tree(process: subprocess.Popen | None) -> None:
+    """Encerra com segurança um processo e toda a sua árvore de subprocessos filhos."""
+
     if process is None or process.poll() is not None:
         return
     pid = process.pid

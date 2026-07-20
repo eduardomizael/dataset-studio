@@ -30,10 +30,12 @@ from dataset_studio.domain.workspace import (
 
 
 def versions_root(defaults_or_ws: dict[str, Any] | Workspace) -> Path:
+    """Retorna o diretório raiz de versões/releases salvas no workspace."""
     if isinstance(defaults_or_ws, Workspace):
         return defaults_or_ws.versions_root
     p = Path(defaults_or_ws["paths"].get("versions_root") or defaults_or_ws["paths"].get("releases_root"))
     return p if p.is_absolute() else p.resolve()
+
 
 
 def version_root(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -> Path:
@@ -48,6 +50,7 @@ def version_config_path(defaults_or_ws: dict[str, Any] | Workspace, version_id: 
 
 
 def list_versions(defaults_or_ws: dict[str, Any] | Workspace) -> list[str]:
+    """Lista todos os identificadores de versões ativas no workspace."""
     root = versions_root(defaults_or_ws)
     if not root.exists():
         return []
@@ -57,10 +60,13 @@ def list_versions(defaults_or_ws: dict[str, Any] | Workspace) -> list[str]:
     )
 
 
+
 def source_video_keys(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> list[str]:
+    """Retorna as chaves únicas identificadoras dos vídeos contidos em uma fonte."""
     manifest = load_frame_manifest(defaults_or_ws, source_id)
     videos = sorted({frame["source_video"] for frame in manifest["frames"]})
     return [f"{source_id}/{video}" for video in videos]
+
 
 
 def create_version(
@@ -73,6 +79,7 @@ def create_version(
     assignments: dict[str, list[str]],
     annotation_revisions: dict[str, str] | None = None,
 ) -> Path:
+    """Cria o manifesto inicial de configuração para uma nova versão de dataset."""
     target_id = version_id or release_id
     if not target_id:
         raise WorkflowError("Identificador da versao obrigatorio.")
@@ -145,6 +152,8 @@ def create_version(
 
 
 def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -> Path:
+    """Materializa fisicamente os dados, estrutura de arquivos e manifesto de uma versão."""
+
     root = version_root(defaults_or_ws, version_id)
     config_p = version_config_path(defaults_or_ws, version_id)
     version = load_yaml(config_p)

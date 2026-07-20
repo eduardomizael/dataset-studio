@@ -24,6 +24,15 @@ DEFAULT_VALUE_FIELD = "image"
 
 
 def load_class_names(path: str | Path | None) -> list[str]:
+    """Carrega os nomes de classes a partir de um arquivo YAML de configuração.
+
+    Args:
+        path: Caminho para o arquivo YAML (ex: data.yaml).
+
+    Returns:
+        Lista com os nomes das classes configuradas.
+    """
+
     if not path:
         return ["objeto"]
     p = Path(path)
@@ -42,6 +51,17 @@ def load_class_names(path: str | Path | None) -> list[str]:
 
 
 def read_image_from_task(task: dict[str, Any], value_field: str, default_root: Path) -> np.ndarray:
+    """Lê e decodifica a imagem associada a uma tarefa do Label Studio.
+
+    Args:
+        task: Dicionário contendo a estrutura de dados da tarefa.
+        value_field: Nome do campo que armazena a referência da imagem.
+        default_root: Diretório raiz para resolução de caminhos relativos locais.
+
+    Returns:
+        Matriz da imagem no formato BGR do OpenCV.
+    """
+
     data = task.get("data") or {}
     image_ref = data.get(value_field) or data.get("image")
     if not image_ref:
@@ -100,6 +120,8 @@ def detection_to_label_studio_result(
     to_name: str,
     result_id: str,
 ) -> dict[str, Any]:
+    """Converte uma estrutura neutra de Detection para o formato JSON de regiões do Label Studio."""
+
     x1, y1, x2, y2 = detection.bbox_xyxy
     x1 = max(0, min(image_width, x1))
     y1 = max(0, min(image_height, y1))
@@ -133,6 +155,8 @@ def detection_to_label_studio_result(
 
 
 class GenericLabelStudioBackend:
+    """Servidor Backend genérico para comunicação e inferência com o Label Studio."""
+
     def __init__(
         self,
         predictor: Predictor,
@@ -142,6 +166,8 @@ class GenericLabelStudioBackend:
         value_field: str = DEFAULT_VALUE_FIELD,
         default_root: Path | None = None,
     ) -> None:
+        """Inicializa o backend com o preditor configurado e parâmetros de rotulação."""
+
         self.predictor = predictor
         self.class_names = class_names
         self.from_name = from_name
@@ -150,6 +176,8 @@ class GenericLabelStudioBackend:
         self.default_root = default_root or Path.cwd()
 
     def predict(self, tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Gera as predições para uma lista de tarefas enviadas pelo Label Studio."""
+
         predictions: list[dict[str, Any]] = []
         for task_index, task in enumerate(tasks):
             image = read_image_from_task(task, self.value_field, self.default_root)
@@ -185,6 +213,8 @@ class GenericLabelStudioBackend:
 
 
 def create_app(backend: GenericLabelStudioBackend):
+    """Cria e configura a aplicação FastAPI que expõe os endpoints do ML Backend."""
+
     from fastapi import FastAPI
 
     app = FastAPI(title="Dataset Studio Label Studio ML Backend")

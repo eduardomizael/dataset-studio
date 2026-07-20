@@ -15,11 +15,21 @@ class Detection(NamedTuple):
 
 
 class Predictor(Protocol):
-    """Contrato que qualquer preditor de objetos deve implementar."""
+    """Contrato abstrato para modelos de inferência e detecção de objetos."""
 
     def predict(self, image: np.ndarray) -> list[Detection]:
+        """Executa a inferência de detecção em uma imagem NumPy.
+
+        Args:
+            image: Imagem de entrada em formato BGR/RGB como matriz NumPy.
+
+        Returns:
+            Lista de objetos Detection contendo classe, confiança e bounding box.
+        """
         ...
 
     @property
     def model_version(self) -> str:
+        """Identificador ou versão do modelo em uso."""
         ...
+

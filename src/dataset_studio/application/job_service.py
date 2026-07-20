@@ -37,6 +37,8 @@ class JobManager:
         metadata: dict[str, Any] | None = None,
         log_path: Path | None = None,
     ) -> dict[str, Any]:
+        """Inicia um novo processo em segundo plano e registra seu acompanhamento."""
+
         with self._lock:
             for job in self._jobs.values():
                 self._refresh(job)
@@ -146,6 +148,8 @@ class JobManager:
         } | {"log": "\n".join(job["lines"])}
 
     def get(self, job_id: str) -> dict[str, Any]:
+        """Obtém o status atualizado e os logs de um job específico pelo ID."""
+
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
@@ -154,6 +158,8 @@ class JobManager:
             return self._public(job)
 
     def list(self) -> list[dict[str, Any]]:
+        """Retorna a lista de todos os jobs registrados no gerenciador."""
+
 
         with self._lock:
             for job in self._jobs.values():
@@ -161,6 +167,8 @@ class JobManager:
             return [self._public(job) for job in reversed(self._jobs.values())]
 
     def stop(self, job_id: str) -> dict[str, Any]:
+        """Solicita a interrupção graciosa ou forçada de um job em execução."""
+
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
@@ -200,6 +208,8 @@ class JobManager:
         return self.stop(job_id)
 
     def stop_all(self, *, wait: bool = False, timeout: float = 12.0) -> None:
+        """Interrompe todos os jobs ativos no gerenciador."""
+
         with self._lock:
             job_ids = [
                 job["id"]

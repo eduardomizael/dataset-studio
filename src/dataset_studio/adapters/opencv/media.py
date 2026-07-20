@@ -15,6 +15,8 @@ from dataset_studio.domain import Workspace, frame_manifest_path, load_campaign
 
 
 def format_file_size(size_bytes: int) -> str:
+    """Formata um tamanho em bytes para uma string legível (ex: KB, MB, GB)."""
+
     if size_bytes <= 0:
         return "0 B"
     units = ["B", "KB", "MB", "GB", "TB"]
@@ -29,6 +31,8 @@ def format_file_size(size_bytes: int) -> str:
 
 
 def get_video_info(video_path: Path, fallback_size: int = 0) -> dict[str, Any]:
+    """Obtém metadados do arquivo de vídeo (dimensões, FPS, tamanho legível)."""
+
     name = video_path.name
     size_bytes = video_path.stat().st_size if video_path.is_file() else fallback_size
     width = 0
@@ -55,6 +59,8 @@ def get_video_info(video_path: Path, fallback_size: int = 0) -> dict[str, Any]:
 
 
 def xyxy_to_yolo(box: tuple[float, float, float, float], img_w: int, img_h: int) -> tuple[float, float, float, float]:
+    """Converte coordenadas em pixels (x1, y1, x2, y2) para o formato YOLO normalizado (xc, yc, w, h)."""
+
     x1, y1, x2, y2 = box
     w = x2 - x1
     h = y2 - y1
@@ -72,6 +78,8 @@ def save_frame(
     images_out: Path,
     labels_out: Path | None,
 ) -> None:
+    """Salva a imagem do frame no disco e cria o arquivo de rótulos YOLO se fornecido."""
+
     cv2.imwrite(str(images_out / f"{frame_name}.jpg"), frame)
     if labels_out is not None:
         with open(labels_out / f"{frame_name}.txt", "w", encoding="utf-8") as f:
@@ -87,6 +95,8 @@ def prediction_record(
     frame,
     detections: list[tuple[int, tuple]],
 ) -> dict[str, Any]:
+    """Constrói o dicionário de registro de predições e metadados de um frame."""
+
     height, width = frame.shape[:2]
     return {
         "frame_id": frame_name,
@@ -109,6 +119,8 @@ def prediction_record(
 
 
 def scan_video(video_path: Path, predictor: UltralyticsPredictor, scan_step: int) -> list[int]:
+    """Escaneia um vídeo com amostragem para detectar a presença de alvos (peixes)."""
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return []
@@ -128,6 +140,8 @@ def scan_video(video_path: Path, predictor: UltralyticsPredictor, scan_step: int
 
 
 def find_fish_ranges(fish_frames: list[int], margin: int, total_frames: int) -> list[tuple[int, int]]:
+    """Agrupa os quadros com presença detectada em intervalos temporais contínuos com margem."""
+
     if not fish_frames:
         return []
     ranges: list[tuple[int, int]] = []
@@ -146,6 +160,8 @@ def find_fish_ranges(fish_frames: list[int], margin: int, total_frames: int) -> 
 
 
 def is_in_ranges(frame_idx: int, ranges: list[tuple[int, int]]) -> bool:
+    """Verifica se o índice do frame está contido em algum dos intervalos selecionados."""
+
     return any(s <= frame_idx <= e for s, e in ranges)
 
 
@@ -156,6 +172,7 @@ def run_uniform_mode(
     labels_out: Path | None,
     records: list[dict],
 ) -> dict[str, int]:
+    """Executa a extração no modo uniforme com passo de amostragem constante."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return {"saved": 0, "analyzed": 0}
@@ -187,10 +204,13 @@ def run_uniform_mode(
 
 
 def extract_source_frames(
-    ws: Workspace,
-    source_id: str,
-    frame_step: int = 30,
-) -> Path:
+    defaults_or_ws: dict[str, Any] | Workspace,
+    campaign_id: str,
+    *,
+    weights_path: Path | None = None,
+) -> dict[str, Any]:
+    """Executa o pipeline de extração de frames (Uniforme ou Inteligente com YOLO) para uma fonte de dados."""
+
     source = ws.source_root(source_id)
     manifest_path = frame_manifest_path(ws, source_id)
     root = ws.source_root(source_id)

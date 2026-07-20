@@ -25,6 +25,11 @@ class TrainingParams:
     extra_args: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        """Converte os parâmetros de treinamento para um dicionário serializável.
+
+        Returns:
+            Dicionário com os atributos de configuração do treino.
+        """
         return {
             "model": self.model,
             "epochs": self.epochs,
@@ -42,7 +47,17 @@ class TrainingParams:
 
 
 class Trainer(Protocol):
-    """Contrato para geradores de comandos e executores de treinamento."""
+    """Contrato abstrato para geradores de comandos e executores de treinamento."""
 
     def build_command(self, data_yaml_path: Path, params: TrainingParams) -> list[str]:
+        """Gera a lista de argumentos de linha de comando para execução do treino.
+
+        Args:
+            data_yaml_path: Caminho do arquivo data.yaml de configuração do dataset.
+            params: Objeto TrainingParams com a configuração desejada.
+
+        Returns:
+            Lista de strings representando o comando a ser executado via subprocess.
+        """
         ...
+

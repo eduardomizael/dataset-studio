@@ -19,15 +19,18 @@ BOX_BOUNDARY_TOLERANCE = 0.001
 
 
 def utc_now() -> str:
+    """Retorna o timestamp atual em formato ISO-8601 UTC."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def sha256(path: Path) -> str:
+    """Calcula o hash SHA-256 do arquivo informado."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
 
 
 def validate_id(value: str, label: str) -> None:
@@ -68,11 +71,14 @@ class Workspace:
 
     @classmethod
     def from_path(cls, path: str | Path) -> Workspace:
+        """Cria uma instância de Workspace resolvendo o caminho informado."""
         return cls(root=Path(path).resolve())
 
     def resolve_path(self, value: str | Path) -> Path:
+        """Resolve um caminho relativo ou absoluto em relação à raiz do workspace."""
         p = Path(value)
         return p if p.is_absolute() else (self.root / p).resolve()
+
 
     @property
     def sources_root(self) -> Path:

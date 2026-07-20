@@ -20,10 +20,12 @@ from dataset_studio.domain.workspace import (
 
 
 def sources_root(defaults_or_ws: dict[str, Any] | Workspace) -> Path:
+    """Retorna o diretório raiz onde todas as fontes de dados/campanhas são armazenadas."""
     if isinstance(defaults_or_ws, Workspace):
         return defaults_or_ws.sources_root
     p = Path(defaults_or_ws["paths"].get("sources_root") or defaults_or_ws["paths"].get("campaigns_root"))
     return p if p.is_absolute() else p.resolve()
+
 
 
 def source_root(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> Path:
@@ -38,6 +40,7 @@ def source_config_path(defaults_or_ws: dict[str, Any] | Workspace, source_id: st
 
 
 def list_sources(defaults_or_ws: dict[str, Any] | Workspace) -> list[str]:
+    """Lista os identificadores de todas as fontes registradas no workspace."""
     root = sources_root(defaults_or_ws)
     if not root.exists():
         return []
@@ -45,6 +48,7 @@ def list_sources(defaults_or_ws: dict[str, Any] | Workspace) -> list[str]:
         path.name for path in root.iterdir()
         if (path / "source.yaml").is_file() or (path / "campaign.yaml").is_file()
     )
+
 
 
 def create_source(
@@ -222,11 +226,13 @@ def create_source(
 
 
 def load_source(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> dict[str, Any]:
+    """Carrega o arquivo YAML de configuração de uma fonte específica."""
     path = source_config_path(defaults_or_ws, source_id)
     payload = load_yaml(path)
     if payload.get("source_id") != source_id and payload.get("campaign_id") != source_id:
         raise WorkflowError("source.yaml possui identificador divergente.")
     return payload
+
 
 
 def frame_manifest_path(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> Path:
@@ -371,6 +377,18 @@ def yolo_prediction_to_ls(
     class_names: list[str],
     index: int,
 ) -> dict[str, Any]:
+    """Converte uma predição no formato YOLO para a estrutura de resultados do Label Studio.
+
+    Args:
+        prediction: Dicionário contendo a predição (class_id, xc, yc, width, height).
+        frame: Dados do frame (frame_id, width, height).
+        class_names: Lista dos nomes de classe disponíveis.
+        index: Índice da predição dentro do frame.
+
+    Returns:
+        Dicionário formatado no esquema de resultados do Label Studio.
+    """
+
     class_id = int(prediction["class_id"])
     if class_id < 0 or class_id >= len(class_names):
         raise WorkflowError(f"class_id invalido na predicao: {class_id}")
@@ -396,6 +414,16 @@ def yolo_prediction_to_ls(
 
 
 def build_import_tasks(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> Path:
+    """Gera o arquivo import_tasks.json com as pré-anotações formatadas para o Label Studio.
+
+    Args:
+        defaults_or_ws: Instância do Workspace ou dicionário de configurações.
+        source_id: Identificador da fonte de dados.
+
+    Returns:
+        Caminho do arquivo import_tasks.json gerado.
+    """
+
     source = load_source(defaults_or_ws, source_id)
     manifest = load_frame_manifest(defaults_or_ws, source_id)
     root = source_root(defaults_or_ws, source_id)

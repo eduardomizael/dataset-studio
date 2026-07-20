@@ -33,6 +33,7 @@ class UltralyticsPredictor(Predictor):
         return f"{self.path.name}:{digest}"
 
     def load(self) -> None:
+        """Carrega tardiamente (lazy load) o modelo YOLO na memória."""
         if self._model is None:
             from ultralytics import YOLO
 
@@ -40,9 +41,11 @@ class UltralyticsPredictor(Predictor):
 
     @property
     def model_version(self) -> str:
+        """Retorna o identificador de versão do modelo carregado."""
         return self._version
 
     def predict(self, image: np.ndarray) -> list[Detection]:
+        """Executa a inferência YOLO na imagem fornecida e converte os resultados."""
         self.load()
         kwargs = {"conf": self.conf, "verbose": False}
         if self.device:
@@ -62,3 +65,4 @@ class UltralyticsPredictor(Predictor):
                     )
                 )
         return detections
+

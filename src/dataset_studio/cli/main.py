@@ -27,6 +27,8 @@ from dataset_studio.domain import (
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
+    """Configura o parser de argumentos de linha de comando para o utilitário CLI."""
+
     parser = argparse.ArgumentParser(
         prog="dataset-studio",
         description="Ferramenta autônoma para organização, revisão e materialização de datasets de visão computacional.",
@@ -99,7 +101,8 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def main(args: list[str] | None = None) -> None:
+def main(args: list[str] | None = None) -> int:
+    """Ponto de entrada de execução da interface de linha de comando (CLI)."""
     parsed = parse_args(args)
     ws = Workspace.from_path(parsed.workspace)
 

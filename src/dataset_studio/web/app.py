@@ -57,24 +57,32 @@ job_manager = JobManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Gerencia o ciclo de vida do servidor FastAPI e encerramento de subprocessos ao finalizar."""
     yield
     # Ao fechar o servidor do Dataset Studio, encerra os outros servidores (Label Studio e ML Backend)
     job_manager.stop_all(wait=True)
+
 
 
 atexit.register(lambda: job_manager.stop_all(wait=False))
 
 
 class LabelStudioStartReq(BaseModel):
+    """Requisição para inicializar o servidor de anotação Label Studio."""
+
     enable_ml: bool = False
     model: str | None = None
 
 
+
 class SourceCreateReq(BaseModel):
+    """Parâmetros para criação de uma nova fonte de dados (source/campanha)."""
+
     source_id: str | None = None
     campaign_id: str | None = None
     videos_dir: str = "videos"
     video_pattern: str = "*.mp4"
+
     video_files: list[str] | None = None
     classes: list[str] = Field(default_factory=lambda: ["objeto"])
 
@@ -90,14 +98,20 @@ CampaignCreateReq = SourceCreateReq
 
 
 class ExportAcceptReq(BaseModel):
+    """Parâmetros para aceitação e validação de exportação do Label Studio."""
+
     path: str
     revision_id: str | None = None
     allow_pending: bool = False
 
 
+
 class VersionCreateReq(BaseModel):
+    """Parâmetros para criação de uma nova versão de dataset (version/release)."""
+
     version_id: str | None = None
     release_id: str | None = None
+
     sources: list[str] | None = None
     campaigns: list[str] | None = None
     assignments: dict[str, list[str]]
@@ -122,13 +136,18 @@ ReleaseCreateReq = VersionCreateReq
 
 
 class SplitPreviewReq(BaseModel):
+    """Parâmetros para pré-visualização de métricas de divisão de dataset (splits)."""
+
     source_id: str | None = None
     campaign_id: str | None = None
     assignments: dict[str, list[str]]
     revision_id: str | None = None
 
 
+
 class TrainStartReq(BaseModel):
+    """Parâmetros para disparar um novo treinamento de modelo YOLO."""
+
     model: str = "yolo26n.pt"
     epochs: int = 50
     imgsz: int = 640
@@ -140,8 +159,11 @@ class TrainStartReq(BaseModel):
     optimizer: str = "auto"
 
 
+
 def create_web_app(workspace: Workspace) -> FastAPI:
+    """Fábrica para criação e configuração do servidor FastAPI do Dataset Studio Web."""
     app = FastAPI(title="Dataset Studio Web Dashboard", version="0.1.0", lifespan=lifespan)
+
 
     @app.get("/", response_class=HTMLResponse)
     def index():

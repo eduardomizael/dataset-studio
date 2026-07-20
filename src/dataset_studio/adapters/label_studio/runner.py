@@ -8,6 +8,8 @@ from pathlib import Path
 
 
 def get_local_ip() -> str:
+    """Detecta o endereço IP local da máquina na rede."""
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("10.255.255.255", 1))
@@ -23,6 +25,8 @@ def build_label_studio_env(
     local_files_root: str | Path,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Constrói as variáveis de ambiente para o Label Studio servir arquivos locais com segurança."""
+
     env = dict(os.environ if base_env is None else base_env)
     document_root = str(Path(local_files_root).resolve())
 
@@ -34,6 +38,8 @@ def build_label_studio_env(
 
 
 def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
+    """Verifica se uma determinada porta TCP está aberta e respondendo."""
+
     try:
         with socket.create_connection((host, port), timeout=0.5):
             return True
@@ -42,6 +48,8 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
 
 
 def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 10.0) -> bool:
+    """Aguardar até que uma porta TCP fique disponível dentro do tempo limite (timeout)."""
+
     import time
     start = time.monotonic()
     while time.monotonic() - start < timeout:
@@ -57,6 +65,8 @@ def start_label_studio_job(
     campaign_id: str,
     port: int = 8080,
 ) -> dict[str, Any]:
+    """Inicia o processo local do Label Studio em segundo plano via JobManager."""
+
     import shutil
     import sys
 
@@ -122,6 +132,8 @@ def start_ml_backend_job(
     model_name: str | None = None,
     port: int = 9090,
 ) -> dict[str, Any]:
+    """Inicia o servidor ML Backend de inferência para auxílio de anotações."""
+
     import sys
 
     if is_port_open(port):

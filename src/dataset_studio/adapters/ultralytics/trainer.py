@@ -12,6 +12,8 @@ class UltralyticsCommandTrainer(Trainer):
     """Monta os argumentos e comando CLI para treinar o modelo via Ultralytics."""
 
     def build_command(self, data_yaml_path: Path, params: TrainingParams) -> list[str]:
+        """Constrói a lista de comandos CLI para o subprocesso do Ultralytics YOLO."""
+
         cmd = [
             sys.executable,
             "-m",
