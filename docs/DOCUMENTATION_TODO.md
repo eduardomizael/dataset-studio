@@ -11,13 +11,13 @@ Este documento rastreia todas as tarefas de documentação do repositório `data
 
 ---
 
-## 2. Documentação de API e Referência Técnica (Planejado)
-- [ ] **Documentação da API REST (`docs/API_REFERENCE.md`)**: Especificação detalhada dos endpoints FastAPI (`/api/campaigns`, `/api/releases`, `/api/jobs`, `/api/trainings`).
-- [ ] **Guia do CLI (`docs/CLI_REFERENCE.md`)**: Especificação dos subcomandos da linha de comando (`dataset-studio campaign`, `dataset-studio release train`).
-- [ ] **Guia de Adaptadores Customizados (`docs/ADAPTERS_GUIDE.md`)**: Como implementar novas portas de predição (`Predictor`) ou novos frameworks de treino além do Ultralytics YOLO.
+## 2. Documentação de API e Referência Técnica (Concluída)
+- [x] **Documentação da API REST (`docs/API_REFERENCE.md`)**: Especificação detalhada dos endpoints FastAPI (`/api/campaigns`, `/api/releases`, `/api/jobs`, `/api/trainings`).
+- [x] **Guia do CLI (`docs/CLI_REFERENCE.md`)**: Especificação dos subcomandos da linha de comando (`dataset-studio campaign`, `dataset-studio release train`).
+- [x] **Guia de Adaptadores Customizados (`docs/ADAPTERS_GUIDE.md`)**: Como implementar novas portas de predição (`Predictor`) ou novos frameworks de treino além do Ultralytics YOLO.
 
 ---
 
-## 3. Tutoriais e Exemplos (Planejado)
-- [ ] **Exemplo End-to-End (`docs/TUTORIAL_E2E.md`)**: Walkthrough passo a passo com amostras de dados fictícios para treinamento completo de um modelo de peixes a partir do zero.
-- [ ] **Guia de Resolução de Problemas (`docs/TROUBLESHOOTING.md`)**: Resolução de dúvidas comuns sobre portas ocupadas (8000/9090), instalação do `uv` e dependências OpenCV/PyTorch.
+## 3. Tutoriais e Exemplos (Concluída)
+- [x] **Exemplo End-to-End (`docs/TUTORIAL_E2E.md`)**: Walkthrough passo a passo com amostras de dados fictícios para treinamento completo de um modelo de peixes a partir do zero.
+- [x] **Guia de Resolução de Problemas (`docs/TROUBLESHOOTING.md`)**: Resolução de dúvidas comuns sobre portas ocupadas (8000/9090), instalação do `uv` e dependências OpenCV/PyTorch.
