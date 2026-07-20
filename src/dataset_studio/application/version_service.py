@@ -1,0 +1,104 @@
+"""Serviços da aplicação para gerenciamento e montagem de versões de dataset (versions)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTrainer
+from dataset_studio.domain import (
+    Workspace,
+    WorkflowError,
+    list_annotation_revisions,
+    load_annotation_revision_report,
+    load_yaml,
+    version_config_path,
+    version_root,
+)
+from dataset_studio.ports.trainer import TrainingParams
+
+
+def preview_split_metrics(
+    ws: Workspace,
+    source_id: str,
+    assignments: dict[str, list[str]],
+    revision_id: str | None = None,
+) -> dict[str, Any]:
+    revisions = list_annotation_revisions(ws, source_id)
+    target_rev = revision_id or (revisions[-1] if revisions else None)
+    if not target_rev:
+        return {
+            "train": {"videos": 0, "frames": 0, "boxes": 0},
+            "val": {"videos": 0, "frames": 0, "boxes": 0},
+        }
+
+    report = load_annotation_revision_report(ws, source_id, target_rev)
+    per_video = report.get("per_video", {})
+
+    train_v = assignments.get("train", [])
+    val_v = assignments.get("val", [])
+
+    def sum_metrics(v_list: list[str]) -> dict[str, int]:
+        total_f = 0
+        total_b = 0
+        for item in v_list:
+            v_name = item.split("/")[-1] if "/" in item else item
+            v_data = per_video.get(v_name, {})
+            total_f += v_data.get("included", 0)
+            total_b += v_data.get("boxes", 0)
+        return {"videos": len(v_list), "frames": total_f, "boxes": total_b}
+
+    return {
+        "train": sum_metrics(train_v),
+        "val": sum_metrics(val_v),
+    }
+
+
+def training_recipe(ws: Workspace, version_id: str, params: TrainingParams | None = None) -> dict[str, Any]:
+    root = version_root(ws, version_id)
+    data_yaml = root / "data.yaml"
+    if not data_yaml.exists():
+        raise WorkflowError("Materialize a versao antes de configurar o treinamento.")
+
+    p = params or TrainingParams(project=str(ws.root / "runs" / "detect"), name=version_id)
+    trainer = UltralyticsCommandTrainer()
+    command = trainer.build_command(data_yaml, p)
+
+    return {
+        "version_id": version_id,
+        "release_id": version_id,
+        "data_yaml": str(data_yaml),
+        "params": p.to_dict(),
+        "command": command,
+        "command_str": " ".join(command),
+    }
+
+
+def version_status(ws: Workspace, version_id: str) -> dict[str, Any]:
+    config = load_yaml(version_config_path(ws, version_id))
+    root = version_root(ws, version_id)
+    report_path = root / "build_report.json"
+    report = (
+        json.loads(report_path.read_text(encoding="utf-8"))
+        if report_path.exists()
+        else None
+    )
+    data_yaml = root / "data.yaml"
+    recipe = training_recipe(ws, version_id) if data_yaml.exists() else None
+    return {
+        "version_id": version_id,
+        "release_id": version_id,
+        "sources": config.get("sources") or config.get("campaigns", []),
+        "campaigns": config.get("sources") or config.get("campaigns", []),
+        "annotation_revisions": config.get("annotation_revisions", {}),
+        "provisional": bool(config.get("provisional", False)),
+        "assignments": config["assignments"],
+        "materialized": (root / "manifest.csv").exists(),
+        "build_report": report,
+        "training_recipe": recipe,
+    }
+
+
+# Alias retrocompatível
+release_status = version_status

@@ -186,24 +186,26 @@ def run_uniform_mode(
     return {"saved": saved, "analyzed": analyzed}
 
 
-def extract_campaign_frames(
+def extract_source_frames(
     ws: Workspace,
-    campaign_id: str,
+    source_id: str,
     frame_step: int = 30,
 ) -> Path:
-    campaign = load_campaign(ws, campaign_id)
-    root = ws.campaign_root(campaign_id)
+    source = ws.source_root(source_id)
+    manifest_path = frame_manifest_path(ws, source_id)
+    root = ws.source_root(source_id)
     images_out = root / "frames" / "raw" / "images"
     images_out.mkdir(parents=True, exist_ok=True)
-    videos_dir = ws.resolve_path(campaign["videos"]["directory"])
+    from dataset_studio.domain.sources import load_source
+    source_data = load_source(ws, source_id)
+    videos_dir = ws.resolve_path(source_data["videos"]["directory"])
     records: list[dict] = []
 
-    for v_file in campaign["videos"]["files"]:
+    for v_file in source_data["videos"]["files"]:
         video_path = videos_dir / v_file["name"]
         if video_path.is_file():
             run_uniform_mode(video_path, frame_step, images_out, None, records)
 
-    manifest_path = frame_manifest_path(ws, campaign_id)
     records_by_id = {str(item["frame_id"]): item for item in records}
     payload = {
         "schema_version": 1,
@@ -211,10 +213,14 @@ def extract_campaign_frames(
         "model_sha256": None,
         "confidence": None,
         "mode": "uniform",
-        "video_pattern": campaign["videos"].get("pattern"),
-        "video_files": [f["name"] for f in campaign["videos"]["files"]],
+        "video_pattern": source_data["videos"].get("pattern"),
+        "video_files": [f["name"] for f in source_data["videos"]["files"]],
         "frame_step": frame_step,
         "frames": [records_by_id[key] for key in sorted(records_by_id)],
     }
     manifest_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return manifest_path
+
+
+extract_campaign_frames = extract_source_frames
+
