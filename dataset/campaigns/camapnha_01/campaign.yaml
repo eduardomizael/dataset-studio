@@ -1,0 +1,26 @@
+schema_version: 1
+campaign_id: camapnha_01
+created_at: '2026-07-20T16:51:53.869227+00:00'
+videos:
+  directory: C:\Users\suporte\Desktop\fish-detection\dataset-studio\videos
+  selection: pattern
+  pattern: '*.mp4'
+  files:
+  - name: video04.mp4
+    size: 5334889
+    mtime_ns: 1776971689294626000
+    sha256: 79e936e3eb7472deb9ddab1f1ac7b4f4b872af2d720d93d053d5db502cf9a145
+extraction:
+  mode: uniform
+  fps_sample: 1.0
+  confidence_threshold: 0.25
+  model: null
+  model_sha256: null
+annotation:
+  classes:
+  - peixe
+  backend: none
+  model: null
+  model_sha256: null
+  detection_config: null
+  detection_config_sha256: null

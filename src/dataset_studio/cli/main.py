@@ -1,0 +1,199 @@
+"""CLI principal do Dataset Studio."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from dataset_studio.application import (
+    TrainingParams,
+    campaign_status,
+    release_status,
+    training_recipe,
+)
+from dataset_studio.domain import (
+    Workspace,
+    accept_native_export,
+    build_import_tasks,
+    build_release,
+    create_campaign,
+    create_release,
+    inspect_native_export,
+    list_campaigns,
+    list_releases,
+)
+
+
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="dataset-studio",
+        description="Ferramenta autônoma para organização, revisão e materialização de datasets de visão computacional.",
+    )
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=Path("."),
+        help="Caminho raiz do workspace de dados (padrão: diretório atual).",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Comandos disponíveis")
+
+    # Campaign commands
+    campaign_parser = subparsers.add_parser("campaign", help="Gerenciar campanhas")
+    campaign_sub = campaign_parser.add_subparsers(dest="subcommand")
+
+    # campaign create
+    cc = campaign_sub.add_parser("create", help="Criar nova campanha")
+    cc.add_argument("--id", required=True, help="ID único da campanha")
+    cc.add_argument("--videos-dir", type=Path, default=Path("videos"), help="Diretório de vídeos")
+    cc.add_argument("--pattern", default="*.mp4", help="Padrão glob de vídeos")
+    cc.add_argument("--classes", nargs="+", default=["objeto"], help="Lista de classes")
+
+    # campaign list
+    campaign_sub.add_parser("list", help="Listar campanhas")
+
+    # campaign status
+    cs = campaign_sub.add_parser("status", help="Status da campanha")
+    cs.add_argument("--id", required=True, help="ID da campanha")
+
+    # import tasks
+    imp = subparsers.add_parser("build-import", help="Gerar tarefas para Label Studio")
+    imp.add_argument("--campaign", required=True, help="ID da campanha")
+
+    # revision accept
+    rev = subparsers.add_parser("accept-revision", help="Aceitar revisão de anotação")
+    rev.add_argument("--campaign", required=True, help="ID da campanha")
+    rev.add_argument("--export", type=Path, required=True, help="JSON nativo exportado do Label Studio")
+    rev.add_argument("--revision-id", default=None, help="ID da revisão")
+    rev.add_argument("--allow-pending", action="store_true", help="Permite pendências como revisão parcial")
+
+    # release commands
+    release_parser = subparsers.add_parser("release", help="Gerenciar releases")
+    release_sub = release_parser.add_subparsers(dest="subcommand")
+
+    # release create
+    rc = release_sub.add_parser("create", help="Criar nova release")
+    rc.add_argument("--id", required=True, help="ID único da release")
+    rc.add_argument("--campaigns", nargs="+", required=True, help="Campanhas a incluir")
+    rc.add_argument("--assignments-json", required=True, help="JSON de atribuição de vídeos aos splits")
+
+    # release build
+    rb = release_sub.add_parser("build", help="Materializar release em disco")
+    rb.add_argument("--id", required=True, help="ID da release")
+
+    # release list
+    release_sub.add_parser("list", help="Listar releases")
+
+    # release status
+    rs = release_sub.add_parser("status", help="Status da release")
+    rs.add_argument("--id", required=True, help="ID da release")
+
+    # release train
+    rt = release_sub.add_parser("train", help="Configurar e treinar modelo a partir de uma release")
+    rt.add_argument("--id", required=True, help="ID da release")
+    rt.add_argument("--model", default="yolo26n.pt", help="Modelo YOLO de partida (.pt ou .yaml)")
+    rt.add_argument("--epochs", type=int, default=50, help="Número de épocas")
+    rt.add_argument("--imgsz", type=int, default=640, help="Tamanho da imagem")
+    rt.add_argument("--batch", type=int, default=-1, help="Tamanho do batch")
+    rt.add_argument("--workers", type=int, default=0, help="Número de workers")
+    rt.add_argument("--device", default="auto", help="Dispositivo (auto, cpu, 0, etc.)")
+    rt.add_argument("--patience", type=int, default=50, help="Épocas de paciência (early stopping)")
+    rt.add_argument("--lr0", type=float, default=0.01, help="Taxa de aprendizado inicial")
+    rt.add_argument("--optimizer", default="auto", help="Otimizador")
+    rt.add_argument("--dry-run", action="store_true", help="Mostra a receita e o comando de treino sem executar")
+
+    return parser.parse_args(args)
+
+
+def main(args: list[str] | None = None) -> None:
+    parsed = parse_args(args)
+    ws = Workspace.from_path(parsed.workspace)
+
+    if parsed.command == "campaign":
+        if parsed.subcommand == "create":
+            path = create_campaign(
+                ws,
+                campaign_id=parsed.id,
+                videos_dir=parsed.videos_dir,
+                video_pattern=parsed.pattern,
+                annotation={"classes": parsed.classes},
+            )
+            print(f"[OK] Campanha criada em: {path}")
+        elif parsed.subcommand == "list":
+            campaigns = list_campaigns(ws)
+            print("Campanhas disponíveis:")
+            for c in campaigns:
+                print(f" - {c}")
+        elif parsed.subcommand == "status":
+            st = campaign_status(ws, parsed.id)
+            print(json.dumps(st, indent=2, ensure_ascii=False))
+
+    elif parsed.command == "build-import":
+        output = build_import_tasks(ws, parsed.campaign)
+        print(f"[OK] Import tasks gerado em: {output}")
+
+    elif parsed.command == "accept-revision":
+        accepted, report_path = accept_native_export(
+            ws,
+            parsed.campaign,
+            parsed.export,
+            revision_id=parsed.revision_id,
+            allow_pending=parsed.allow_pending,
+        )
+        print(f"[OK] Revisão aceita em: {accepted}")
+
+    elif parsed.command == "release":
+        if parsed.subcommand == "create":
+            assignments = json.loads(parsed.assignments_json)
+            path = create_release(
+                ws,
+                release_id=parsed.id,
+                campaign_ids=parsed.campaigns,
+                assignments=assignments,
+            )
+            print(f"[OK] Release configurada em: {path}")
+        elif parsed.subcommand == "build":
+            manifest = build_release(ws, parsed.id)
+            print(f"[OK] Release materializada com manifesto: {manifest}")
+        elif parsed.subcommand == "list":
+            releases = list_releases(ws)
+            print("Releases disponíveis:")
+            for r in releases:
+                print(f" - {r}")
+        elif parsed.subcommand == "status":
+            st = release_status(ws, parsed.id)
+            print(json.dumps(st, indent=2, ensure_ascii=False))
+        elif parsed.subcommand == "train":
+            params = TrainingParams(
+                model=parsed.model,
+                epochs=parsed.epochs,
+                imgsz=parsed.imgsz,
+                batch=parsed.batch,
+                workers=parsed.workers,
+                device=parsed.device,
+                patience=parsed.patience,
+                lr0=parsed.lr0,
+                optimizer=parsed.optimizer,
+                project=str(ws.root / "runs" / "detect"),
+                name=parsed.id,
+            )
+            recipe = training_recipe(ws, parsed.id, params)
+            print("=" * 60)
+            print(" RECEITA E PARÂMETROS DE TREINAMENTO CONFIGURADOS")
+            print("=" * 60)
+            print(json.dumps(recipe, indent=2, ensure_ascii=False))
+            print("=" * 60)
+            if parsed.dry_run:
+                print("[DRY-RUN] NENHUM PROCESSO DE TREINO FOI INICIADO.")
+            else:
+                print(f"[INICIANDO TREINAMENTO]: {recipe['command_str']}")
+                import subprocess
+                subprocess.run(recipe["command"], check=True)
+    else:
+        print("Dataset Studio CLI v0.1.0. Use --help para ver os comandos disponíveis.")
+
+
+if __name__ == "__main__":
+    main()
