@@ -14,6 +14,46 @@ from dataset_studio.adapters.ultralytics.predictor import UltralyticsPredictor
 from dataset_studio.domain import Workspace, frame_manifest_path, load_campaign
 
 
+def format_file_size(size_bytes: int) -> str:
+    if size_bytes <= 0:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    val = float(size_bytes)
+    while val >= 1024.0 and i < len(units) - 1:
+        val /= 1024.0
+        i += 1
+    if i == 0:
+        return f"{int(val)} B"
+    return f"{val:.1f} {units[i]}"
+
+
+def get_video_info(video_path: Path, fallback_size: int = 0) -> dict[str, Any]:
+    name = video_path.name
+    size_bytes = video_path.stat().st_size if video_path.is_file() else fallback_size
+    width = 0
+    height = 0
+    fps = 0.0
+
+    if video_path.is_file():
+        cap = cv2.VideoCapture(str(video_path))
+        if cap.isOpened():
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = float(cap.get(cv2.CAP_PROP_FPS))
+            cap.release()
+
+    return {
+        "name": name,
+        "size_bytes": size_bytes,
+        "size_human": format_file_size(size_bytes),
+        "width": width,
+        "height": height,
+        "resolution": f"{width}x{height}" if width and height else "N/A",
+        "fps": round(fps, 2) if fps else 0.0,
+    }
+
+
 def xyxy_to_yolo(box: tuple[float, float, float, float], img_w: int, img_h: int) -> tuple[float, float, float, float]:
     x1, y1, x2, y2 = box
     w = x2 - x1

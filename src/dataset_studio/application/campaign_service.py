@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from dataset_studio.adapters.opencv.media import get_video_info
 from dataset_studio.domain import (
     Workspace,
     accept_native_export,
@@ -114,9 +115,18 @@ def campaign_status(ws: Workspace, campaign_id: str) -> dict[str, Any]:
     else:
         next_action = "ready-for-release"
 
+    videos_dir = ws.resolve_path(campaign["videos"]["directory"])
+    video_details = []
+    for v_item in campaign["videos"].get("files", []):
+        v_name = v_item["name"] if isinstance(v_item, dict) else str(v_item)
+        v_path = videos_dir / v_name
+        fallback_size = v_item.get("size", 0) if isinstance(v_item, dict) else 0
+        video_details.append(get_video_info(v_path, fallback_size=fallback_size))
+
     return {
         "campaign_id": campaign_id,
         "videos": videos,
+        "video_details": video_details,
         "frames": frames,
         "import_tasks": tasks,
         "export_accepted": accepted,
