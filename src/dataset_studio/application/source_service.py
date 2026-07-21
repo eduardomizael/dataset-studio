@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 from typing import Any
 
 from dataset_studio.adapters.opencv.media import get_video_info
 from dataset_studio.domain import (
     Workspace,
-    accept_native_export,
-    export_annotations_path,
     frame_manifest_path,
     import_tasks_path,
     inspect_native_export,
@@ -106,11 +102,6 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
 
     # Verificar pasta finished_tasks
     finished_info = inspect_finished_tasks(ws, source_id)
-    if finished_info["found"] and not list_annotation_revisions(ws, source_id):
-        # Auto-aceitar exportação do finished_tasks
-        latest_path = Path(finished_info["latest_file"]["path"])
-        accept_native_export(ws, source_id, latest_path, revision_id="rev_auto", allow_pending=True)
-
     revisions = []
     for revision_id in list_annotation_revisions(ws, source_id):
         revision_report = load_annotation_revision_report(ws, source_id, revision_id)
@@ -179,6 +170,8 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
         "annotation_backend": annotation_backend,
         "annotation_model": annotation.get("model"),
         "annotation_detection_config": annotation.get("detection_config"),
+        "extraction": source.get("extraction", {}),
+        "annotation": annotation,
         "local_files_storage_path": str(
             (
                 source_root(ws, source_id)

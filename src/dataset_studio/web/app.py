@@ -5,10 +5,14 @@ from __future__ import annotations
 import argparse
 import atexit
 import json
+import importlib.util
 import re
 import shutil
+import tempfile
+import uuid
 import uvicorn
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -21,16 +25,15 @@ from dataset_studio.adapters.label_studio.runner import (
     start_label_studio_job,
     start_ml_backend_job,
     wait_for_port,
+    wait_for_ml_backend,
 )
-from dataset_studio.adapters.opencv.media import extract_source_frames, extract_campaign_frames
+from dataset_studio.adapters.opencv.media import extract_source_frames, preannotate_source_frames
 from dataset_studio.application import (
     JobManager,
     TrainingParams,
-    campaign_status,
     inspect_finished_tasks,
     list_available_models,
     preview_split_metrics,
-    release_status,
     source_status,
     training_recipe,
     version_status,
@@ -40,20 +43,17 @@ from dataset_studio.domain import (
     Workspace,
     accept_native_export,
     build_import_tasks,
-    build_release,
     build_version,
-    create_campaign,
-    create_release,
     create_source,
     create_version,
     delete_source,
     delete_version,
-    list_campaigns,
-    list_releases,
+    dump_yaml,
     list_sources,
     list_versions,
-    load_campaign,
     load_source,
+    load_yaml,
+    validate_id,
 )
 
 job_manager = JobManager()
@@ -98,6 +98,23 @@ class SourceCreateReq(BaseModel):
             raise ValueError("Identificador da origem obrigatório.")
         return val
 
+
+class ExtractionReq(BaseModel):
+    mode: Literal["uniform", "smart"] = "uniform"
+    uniform_frame_step: int = Field(default=30, ge=1)
+    model: str | None = None
+    confidence: float = Field(default=0.25, ge=0.0, le=1.0)
+    scan_step: int = Field(default=15, ge=1)
+    dense_step: int = Field(default=30, ge=1)
+    sparse_step: int = Field(default=90, ge=1)
+    margin: int = Field(default=45, ge=0)
+    max_negatives_per_video: int = Field(default=15, ge=0)
+
+
+class ImportTasksReq(BaseModel):
+    mode: Literal["existing", "none", "model"] = "existing"
+    model: str | None = None
+    confidence: float = Field(default=0.25, ge=0.0, le=1.0)
 
 CampaignCreateReq = SourceCreateReq
 
@@ -168,6 +185,97 @@ class TrainStartReq(BaseModel):
 def create_web_app(workspace: Workspace) -> FastAPI:
     """Fábrica para criação e configuração do servidor FastAPI do Dataset Studio Web."""
     app = FastAPI(title="Dataset Studio Web Dashboard", version="0.1.0", lifespan=lifespan)
+
+    def training_ids_for_version(version_id: str) -> list[str]:
+        runs_root = workspace.root / "runs" / "detect"
+        matches: list[str] = []
+        if not runs_root.exists():
+            return matches
+        for run_dir in runs_root.iterdir():
+            job_path = run_dir / "workflow_job.json"
+            if not job_path.is_file():
+                continue
+            try:
+                payload = json.loads(job_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if (payload.get("metadata") or {}).get("release_id") == version_id:
+                matches.append(run_dir.name)
+        return sorted(matches)
+
+    def versions_for_source(source_id: str, revision_id: str | None = None) -> list[str]:
+        matches: list[str] = []
+        for version_id in list_versions(workspace):
+            try:
+                version = load_yaml(workspace.version_config_path(version_id))
+            except WorkflowError:
+                continue
+            if source_id not in (version.get("sources") or version.get("campaigns") or []):
+                continue
+            if revision_id is not None and (version.get("annotation_revisions") or {}).get(source_id) != revision_id:
+                continue
+            matches.append(version_id)
+        return matches
+
+    def deletion_impact(resource_type: str, resource_id: str, source_id: str | None = None) -> dict[str, Any]:
+        versions: list[str] = []
+        trainings: list[str] = []
+        if resource_type == "source":
+            versions = versions_for_source(resource_id)
+        elif resource_type == "revision":
+            if not source_id:
+                raise WorkflowError("source_id e obrigatorio para revisar o impacto da revisao.")
+            versions = versions_for_source(source_id, resource_id)
+        elif resource_type == "version":
+            versions = [resource_id]
+        elif resource_type == "training":
+            trainings = [resource_id]
+        else:
+            raise WorkflowError(f"Tipo de recurso desconhecido: {resource_type}")
+        for version_id in versions:
+            trainings.extend(training_ids_for_version(version_id))
+        shared_video_references: dict[str, list[str]] = {}
+        if resource_type == "source":
+            source = load_source(workspace, resource_id)
+            directory = workspace.resolve_path(source["videos"]["directory"]).resolve()
+            target_paths = {
+                str((directory / item["name"]).resolve())
+                for item in source["videos"].get("files", [])
+                if isinstance(item, dict)
+            }
+            for other_id in list_sources(workspace):
+                if other_id == resource_id:
+                    continue
+                other = load_source(workspace, other_id)
+                other_dir = workspace.resolve_path(other["videos"]["directory"]).resolve()
+                for item in other["videos"].get("files", []):
+                    if not isinstance(item, dict):
+                        continue
+                    path = str((other_dir / item["name"]).resolve())
+                    if path in target_paths:
+                        shared_video_references.setdefault(path, []).append(other_id)
+        return {
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "source_id": source_id,
+            "dependent_versions": sorted(set(versions if resource_type in {"source", "revision"} else [])),
+            "dependent_trainings": sorted(set(trainings if resource_type != "training" else [])),
+            "shared_video_references": shared_video_references,
+            "warning": "A exclusao e permanente e pode invalidar a rastreabilidade de recursos mantidos sem cascata.",
+        }
+
+    def remove_training(training_id: str) -> None:
+        validate_id(training_id, "training_id")
+        run_dir = workspace.root / "runs" / "detect" / training_id
+        if not run_dir.is_dir():
+            raise WorkflowError(f"Treinamento nao encontrado: {training_id}")
+        shutil.rmtree(run_dir, ignore_errors=False)
+
+    def remove_version_with_dependents(version_id: str, cascade: bool) -> None:
+        if cascade:
+            for training_id in training_ids_for_version(version_id):
+                remove_training(training_id)
+        delete_version(workspace, version_id)
 
 
     @app.get("/", response_class=HTMLResponse)
@@ -505,11 +613,16 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
         async function deleteSource(event, sourceId) {
             if (event) event.stopPropagation();
-            if (!confirm(`ATENÇÃO: Deseja realmente excluir a origem '${sourceId}'? Todos os arquivos e quadros extraídos no disco serão APAGADOS permanentemente.`)) {
-                return;
-            }
             try {
-                const res = await fetch(`/api/sources/${encodeURIComponent(sourceId)}`, { method: 'DELETE' });
+                const impactRes = await fetch(`/api/deletion-impact/source/${encodeURIComponent(sourceId)}`);
+                const impact = await impactRes.json();
+                const deps = [...(impact.dependent_versions || []), ...(impact.dependent_trainings || [])];
+                const sharedVideos = Object.keys(impact.shared_video_references || {});
+                const cascade = deps.length > 0 && confirm(`A origem '${sourceId}' possui dependências:\n\nVersões: ${(impact.dependent_versions || []).join(', ') || 'nenhuma'}\nTreinamentos: ${(impact.dependent_trainings || []).join(', ') || 'nenhum'}\nVídeos também usados por outras origens: ${sharedVideos.length}\n\nOK: excluir também versões e treinamentos dependentes.\nCancelar: manter dependências, mesmo que fiquem inválidas.`);
+                const deleteVideos = confirm(`Também apagar os arquivos de vídeo associados à origem?\n\n${sharedVideos.length ? `ATENÇÃO: ${sharedVideos.length} vídeo(s) também são referenciados por outras origens.` : 'Nenhum compartilhamento com outra origem foi detectado.'}\n\nOK: apagar vídeos.\nCancelar: preservar vídeos no disco.`);
+                const typed = prompt(`Exclusão permanente. Digite exatamente '${sourceId}' para confirmar:`);
+                if (typed !== sourceId) return;
+                const res = await fetch(`/api/sources/${encodeURIComponent(sourceId)}?confirm=${encodeURIComponent(sourceId)}&cascade=${cascade}&delete_videos=${deleteVideos}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro ao excluir origem.');
                 alert(data.message || 'Origem excluída com sucesso!');
@@ -521,11 +634,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
         async function deleteRelease(event, versionId) {
             if (event) event.stopPropagation();
-            if (!confirm(`ATENÇÃO: Deseja realmente excluir a Release '${versionId}'? O dataset compilado e treinos associados em disco serão APAGADOS permanentemente.`)) {
-                return;
-            }
             try {
-                const res = await fetch(`/api/releases/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
+                const impactRes = await fetch(`/api/deletion-impact/version/${encodeURIComponent(versionId)}`);
+                const impact = await impactRes.json();
+                const cascade = (impact.dependent_trainings || []).length > 0 && confirm(`A versão '${versionId}' possui treinamentos dependentes:\n${(impact.dependent_trainings || []).join(', ')}\n\nOK: excluir também os treinamentos.\nCancelar: manter os treinamentos sem o dataset de origem.`);
+                const typed = prompt(`Exclusão permanente. Digite exatamente '${versionId}' para confirmar:`);
+                if (typed !== versionId) return;
+                const res = await fetch(`/api/releases/${encodeURIComponent(versionId)}?confirm=${encodeURIComponent(versionId)}&cascade=${cascade}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro ao excluir release.');
                 alert(data.message || 'Release excluída com sucesso!');
@@ -537,11 +652,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
         async function deleteTraining(event, trainingId) {
             if (event) event.stopPropagation();
-            if (!confirm(`ATENÇÃO: Deseja realmente excluir o treinamento '${trainingId}'? Todos os arquivos de logs e pesos (.pt) no disco serão APAGADOS.`)) {
-                return;
-            }
+            const typed = prompt(`Os logs e pesos serão apagados permanentemente. Digite exatamente '${trainingId}' para confirmar:`);
+            if (typed !== trainingId) return;
             try {
-                const res = await fetch(`/api/trainings/${encodeURIComponent(trainingId)}`, { method: 'DELETE' });
+                const res = await fetch(`/api/trainings/${encodeURIComponent(trainingId)}?confirm=${encodeURIComponent(trainingId)}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro ao excluir treinamento.');
                 alert(data.message || 'Treinamento excluído com sucesso!');
@@ -779,6 +893,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     </div>
 
                     <!-- Container de Painéis Individuais para Cada Exportação JSON Detectada -->
+                    <div id="accepted-revisions-container" class="space-y-2"></div>
                     <div id="finished-exports-container" class="hidden space-y-4">
                         <!-- Painéis gerados dinamicamente via JS -->
                     </div>
@@ -851,7 +966,20 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 return;
             }
             try {
-                const res = await fetch(`/api/campaigns/${campaignId}/extract`, { method: 'POST' });
+                const model = document.getElementById('extract-model').value;
+                const payload = {
+                    mode: selectedMode,
+                    uniform_frame_step: Number(document.getElementById('extract-step').value || 30),
+                    model: selectedMode === 'smart' ? model : null
+                };
+                if (selectedMode === 'smart' && !model) {
+                    throw new Error('Selecione um modelo para a extração inteligente.');
+                }
+                const res = await fetch(`/api/campaigns/${campaignId}/extract`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro na extração');
                 alert('Extração concluída com sucesso!');
@@ -867,7 +995,14 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 return;
             }
             try {
-                const res = await fetch(`/api/campaigns/${campaignId}/import-tasks`, { method: 'POST' });
+                const selected = document.querySelector('input[name="pre_opt"]:checked').value;
+                const model = document.getElementById('pre-model-dropdown').value;
+                if (selected === 'model' && !model) throw new Error('Selecione um modelo para pré-anotar.');
+                const res = await fetch(`/api/campaigns/${campaignId}/import-tasks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({mode: selected, model: selected === 'model' ? model : null})
+                });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro ao gerar import tasks');
                 alert('Arquivo import_tasks.json gerado com sucesso!');
@@ -875,6 +1010,20 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             } catch (err) {
                 alert(err.message);
             }
+        }
+
+        async function deleteRevision(revisionId) {
+            const impactRes = await fetch(`/api/deletion-impact/revision/${encodeURIComponent(revisionId)}?source_id=${encodeURIComponent(campaignId)}`);
+            const impact = await impactRes.json();
+            const deps = [...(impact.dependent_versions || []), ...(impact.dependent_trainings || [])];
+            const cascade = deps.length > 0 && confirm(`A revisão '${revisionId}' é usada por:\nVersões: ${(impact.dependent_versions || []).join(', ') || 'nenhuma'}\nTreinamentos: ${(impact.dependent_trainings || []).join(', ') || 'nenhum'}\n\nOK: excluir em cascata.\nCancelar: manter dependências potencialmente inválidas.`);
+            const typed = prompt(`Digite exatamente '${revisionId}' para excluir permanentemente a revisão:`);
+            if (typed !== revisionId) return;
+            const res = await fetch(`/api/sources/${encodeURIComponent(campaignId)}/revisions/${encodeURIComponent(revisionId)}?confirm=${encodeURIComponent(revisionId)}&cascade=${cascade}`, {method: 'DELETE'});
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Erro ao excluir revisão.');
+            alert(data.message);
+            loadCampaignDetails();
         }
 
         async function startLabelStudioService() {
@@ -1017,6 +1166,22 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 }
 
                 // Etapa 2 & 3 (Bloqueio ao concluir)
+                const revisionsContainer = document.getElementById('accepted-revisions-container');
+                const revisions = st.annotation_revisions || [];
+                revisionsContainer.innerHTML = revisions.length ? `
+                    <div class="text-xs font-semibold text-slate-300">Revisões aceitas</div>
+                    ${revisions.map(rev => `<div class="flex items-center justify-between p-2.5 bg-slate-800/50 border border-slate-700/50 rounded-lg"><span class="font-mono text-xs text-purple-300">${escapeHtml(rev.revision_id)}</span><button onclick="deleteRevision('${encodeURIComponent(rev.revision_id)}'.startsWith('%') ? decodeURIComponent('${encodeURIComponent(rev.revision_id)}') : '${escapeHtml(rev.revision_id)}')" class="text-xs text-rose-400 hover:text-rose-300">Excluir</button></div>`).join('')}
+                ` : '';
+                const extraction = st.extraction || {};
+                selectedMode = extraction.mode || 'uniform';
+                selectExtractionMode(selectedMode);
+                if (extraction.uniform_frame_step || extraction.frame_step) {
+                    document.getElementById('extract-step').value = extraction.uniform_frame_step || extraction.frame_step;
+                }
+                if (extraction.model) {
+                    const modelSelect = document.getElementById('extract-model');
+                    modelSelect.value = extraction.model;
+                }
                 if (st.frames > 0) {
                     step2Locked = true;
                     document.getElementById('step-2-status').className = "text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-md";
@@ -1170,6 +1335,22 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     selM.innerHTML = empty;
                     selPre.innerHTML = empty;
                     selMl.innerHTML = empty;
+                }
+
+                if (st.extraction && st.extraction.model) {
+                    selM.value = st.extraction.model;
+                }
+                if (st.annotation_backend === 'local' || st.annotation_model) {
+                    document.getElementById('pre-model').checked = true;
+                    document.getElementById('pre-none').checked = false;
+                    document.getElementById('pre-model-selector').classList.remove('hidden');
+                    if (st.annotation_model) {
+                        selPre.value = st.annotation_model;
+                        selMl.value = st.annotation_model;
+                    }
+                } else {
+                    document.getElementById('pre-none').checked = true;
+                    document.getElementById('pre-model').checked = false;
                 }
 
             } catch (err) {
@@ -2216,7 +2397,11 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 items.append(
                     {
                         "name": path.name,
-                        "status": "completed" if best.is_file() else "in_progress",
+                        "status": (
+                            json.loads((path / "workflow_job.json").read_text(encoding="utf-8")).get("status", "unknown")
+                            if (path / "workflow_job.json").is_file()
+                            else ("completed" if best.is_file() else "unknown")
+                        ),
                         "model": model_name,
                         "best": str(best) if best.is_file() else None,
                     }
@@ -2224,12 +2409,14 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         return items
 
     @app.delete("/api/trainings/{training_id}")
-    def api_delete_training(training_id: str):
-        runs_dir = workspace.root / "runs" / "detect" / training_id
-        if not runs_dir.exists():
-            raise HTTPException(status_code=404, detail="Treinamento não encontrado no disco.")
-        shutil.rmtree(runs_dir, ignore_errors=False)
-        return {"status": "ok", "message": f"Treinamento {training_id} excluído com sucesso."}
+    def api_delete_training(training_id: str, confirm: str = ""):
+        if confirm != training_id:
+            raise HTTPException(status_code=400, detail="Confirmação divergente do ID do treinamento.")
+        try:
+            remove_training(training_id)
+            return {"status": "ok", "message": f"Treinamento {training_id} excluído com sucesso."}
+        except WorkflowError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
 
     @app.get("/api/trainings/{training_id}")
     def api_training_detail(training_id: str):
@@ -2253,10 +2440,32 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             except Exception:
                 pass
 
+        workflow_job = {}
+        workflow_job_path = runs_dir / "workflow_job.json"
+        if workflow_job_path.is_file():
+            try:
+                workflow_job = json.loads(workflow_job_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                workflow_job = {}
+
         # Parser do relatório da release associada
         release_info = {}
         try:
-            rel_status = version_status(workspace, training_id)
+            release_id = (workflow_job.get("metadata") or {}).get("release_id")
+            if not release_id:
+                release_id = training_args.get("name") if training_args.get("name") in list_versions(workspace) else None
+            if not release_id and training_args.get("data"):
+                try:
+                    data_path = Path(str(training_args["data"])).resolve()
+                    relative_data = data_path.relative_to(workspace.versions_root.resolve())
+                    candidate = relative_data.parts[0]
+                    if candidate in list_versions(workspace):
+                        release_id = candidate
+                except (OSError, ValueError, IndexError):
+                    pass
+            if not release_id:
+                raise WorkflowError("Treinamento sem version_id persistido.")
+            rel_status = version_status(workspace, release_id)
             release_info = {
                 "release_id": rel_status["release_id"],
                 "sources": rel_status.get("sources", []),
@@ -2304,8 +2513,8 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                             metrics["val_cls_loss"] = float(v)
                         elif "val/dfl_loss" in lk:
                             metrics["val_dfl_loss"] = float(v)
-            except Exception as e:
-                console.error("Erro ao ler results.csv:", e)
+            except Exception as exc:
+                metrics["parse_error"] = str(exc)
 
         # Cálculo do tempo de execução baseado nos logs/arquivos
         duration_seconds = None
@@ -2400,25 +2609,44 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             target_id = source_id or campaign_id
             if not target_id:
                 raise HTTPException(status_code=400, detail="Identificador da origem obrigatório.")
+            validate_id(target_id, "source_id")
             class_list = json.loads(classes)
             notes_dict = json.loads(video_notes) if video_notes else {}
             videos_dir = workspace.videos_root
             videos_dir.mkdir(parents=True, exist_ok=True)
+            target_videos_dir = videos_dir / target_id
+            if target_videos_dir.exists() or workspace.source_root(target_id).exists():
+                raise WorkflowError(f"A origem ja existe: {target_id}")
+            staging_dir = Path(tempfile.mkdtemp(prefix=f".{target_id}-", dir=videos_dir))
             video_filenames = []
-            for file in videos:
-                dest = videos_dir / file.filename
-                with dest.open("wb") as handle:
-                    shutil.copyfileobj(file.file, handle)
-                video_filenames.append(file.filename)
-            path = create_source(
-                workspace,
-                source_id=target_id,
-                videos_dir=videos_dir,
-                video_pattern="*.mp4",
-                video_files=video_filenames,
-                video_notes=notes_dict,
-                annotation={"classes": class_list},
-            )
+            try:
+                for file in videos:
+                    filename = file.filename or ""
+                    if not filename or Path(filename).name != filename:
+                        raise WorkflowError(f"Nome de video invalido: {filename}")
+                    if filename in video_filenames:
+                        raise WorkflowError(f"Video duplicado no upload: {filename}")
+                    dest = staging_dir / filename
+                    with dest.open("wb") as handle:
+                        shutil.copyfileobj(file.file, handle)
+                    video_filenames.append(filename)
+                staging_dir.replace(target_videos_dir)
+                try:
+                    path = create_source(
+                        workspace,
+                        source_id=target_id,
+                        videos_dir=target_videos_dir,
+                        video_pattern="*.mp4",
+                        video_files=video_filenames,
+                        video_notes=notes_dict,
+                        annotation={"classes": class_list},
+                    )
+                except Exception:
+                    shutil.rmtree(target_videos_dir, ignore_errors=True)
+                    raise
+            finally:
+                if staging_dir.exists():
+                    shutil.rmtree(staging_dir, ignore_errors=True)
             return {"status": "ok", "path": str(path)}
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -2441,11 +2669,28 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
     @app.post("/api/sources/{source_id}/extract")
     @app.post("/api/campaigns/{source_id}/extract")
-    def api_extract_frames(source_id: str):
+    def api_extract_frames(source_id: str, req: ExtractionReq | None = None):
         try:
             st = source_status(workspace, source_id)
             if st.get("frames", 0) > 0:
                 raise WorkflowError("A segunda etapa (extração de frames) já foi concluída e não pode ser alterada.")
+            if req is not None:
+                source = load_source(workspace, source_id)
+                extraction = req.model_dump()
+                if req.mode == "smart":
+                    if not req.model:
+                        raise WorkflowError("O modo inteligente exige um modelo.")
+                    model_path = workspace.resolve_path(req.model).resolve()
+                    try:
+                        model_path.relative_to(workspace.models_root.resolve())
+                    except ValueError as exc:
+                        raise WorkflowError("O modelo deve estar dentro de models/.") from exc
+                    if not model_path.is_file():
+                        raise WorkflowError(f"Modelo nao encontrado: {model_path}")
+                else:
+                    extraction["model"] = None
+                source["extraction"] = extraction
+                dump_yaml(workspace.source_config_path(source_id), source)
             manifest_path = extract_source_frames(workspace, source_id)
             return {"status": "ok", "manifest": str(manifest_path)}
         except WorkflowError as exc:
@@ -2453,12 +2698,34 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
     @app.post("/api/sources/{source_id}/import-tasks")
     @app.post("/api/campaigns/{source_id}/import-tasks")
-    def api_build_import_tasks(source_id: str):
+    def api_build_import_tasks(source_id: str, req: ImportTasksReq | None = None):
         try:
             st = source_status(workspace, source_id)
             if st.get("import_tasks", 0) > 0:
                 raise WorkflowError("A terceira etapa (geração do import_tasks.json) já foi concluída e não pode ser alterada.")
-            output = build_import_tasks(workspace, source_id)
+            request = req or ImportTasksReq()
+            if request.mode == "model":
+                if not request.model:
+                    raise WorkflowError("Selecione um modelo para pre-anotar.")
+                model_path = workspace.resolve_path(request.model).resolve()
+                try:
+                    model_path.relative_to(workspace.models_root.resolve())
+                except ValueError as exc:
+                    raise WorkflowError("O modelo deve estar dentro de models/.") from exc
+                if not model_path.is_file():
+                    raise WorkflowError(f"Modelo nao encontrado: {model_path}")
+                preannotate_source_frames(
+                    workspace, source_id, model_path, confidence=request.confidence
+                )
+                source = load_source(workspace, source_id)
+                source["annotation"]["backend"] = "local"
+                source["annotation"]["model"] = request.model
+                dump_yaml(workspace.source_config_path(source_id), source)
+            output = build_import_tasks(
+                workspace,
+                source_id,
+                include_predictions=request.mode != "none",
+            )
             return {"status": "ok", "output": str(output)}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -2471,15 +2738,27 @@ def create_web_app(workspace: Workspace) -> FastAPI:
     ):
         try:
             load_source(workspace, source_id)
-            ls_job = start_label_studio_job(job_manager, workspace, source_id, port=8080)
             ml_job = None
             if req.enable_ml:
                 ml_job = start_ml_backend_job(
                     job_manager, workspace, source_id, model_name=req.model, port=9090
                 )
-                wait_for_port(9090, timeout=8.0)
+                if not wait_for_ml_backend(9090, timeout=20.0):
+                    detail = "O backend de predicao nao ficou saudavel."
+                    if isinstance(ml_job, dict) and ml_job.get("id"):
+                        try:
+                            failed_job = job_manager.get(ml_job["id"])
+                            if failed_job.get("log"):
+                                detail += f"\n{failed_job['log'][-2000:]}"
+                        except WorkflowError:
+                            pass
+                    raise WorkflowError(detail)
+
+            ls_job = start_label_studio_job(job_manager, workspace, source_id, port=8080)
 
             online = wait_for_port(8080, timeout=15.0)
+            if not online:
+                raise WorkflowError("O Label Studio nao respondeu na porta 8080.")
             return {
                 "status": "ok",
                 "online": online,
@@ -2558,21 +2837,60 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         except WorkflowError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    @app.get("/api/deletion-impact/{resource_type}/{resource_id}")
+    def api_deletion_impact(resource_type: str, resource_id: str, source_id: str | None = None):
+        try:
+            return deletion_impact(resource_type, resource_id, source_id)
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     @app.delete("/api/sources/{source_id}")
     @app.delete("/api/campaigns/{source_id}")
-    def api_delete_source(source_id: str):
+    def api_delete_source(
+        source_id: str,
+        confirm: str = "",
+        cascade: bool = False,
+        delete_videos: bool = True,
+    ):
         try:
-            delete_source(workspace, source_id)
-            return {"status": "ok", "message": f"Origem {source_id} excluída com sucesso."}
+            if confirm != source_id:
+                raise WorkflowError("Confirmação divergente do ID da origem.")
+            impact = deletion_impact("source", source_id)
+            if cascade:
+                for version_id in impact["dependent_versions"]:
+                    remove_version_with_dependents(version_id, cascade=True)
+            delete_source(workspace, source_id, delete_video_files=delete_videos)
+            return {"status": "ok", "message": f"Origem {source_id} excluída com sucesso.", "impact": impact, "cascade": cascade}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @app.delete("/api/versions/{version_id}")
     @app.delete("/api/releases/{version_id}")
-    def api_delete_version(version_id: str):
+    def api_delete_version(version_id: str, confirm: str = "", cascade: bool = False):
         try:
-            delete_version(workspace, version_id)
-            return {"status": "ok", "message": f"Release {version_id} excluída com sucesso."}
+            if confirm != version_id:
+                raise WorkflowError("Confirmação divergente do ID da versão.")
+            impact = deletion_impact("version", version_id)
+            remove_version_with_dependents(version_id, cascade=cascade)
+            return {"status": "ok", "message": f"Release {version_id} excluída com sucesso.", "impact": impact, "cascade": cascade}
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.delete("/api/sources/{source_id}/revisions/{revision_id}")
+    def api_delete_revision(source_id: str, revision_id: str, confirm: str = "", cascade: bool = False):
+        try:
+            if confirm != revision_id:
+                raise WorkflowError("Confirmação divergente do ID da revisão.")
+            impact = deletion_impact("revision", revision_id, source_id)
+            if cascade:
+                for version_id in impact["dependent_versions"]:
+                    remove_version_with_dependents(version_id, cascade=True)
+            revision_root = workspace.source_root(source_id) / "label_studio" / "revisions" / revision_id
+            validate_id(revision_id, "revision_id")
+            if not revision_root.is_dir():
+                raise WorkflowError(f"Revisão não encontrada: {revision_id}")
+            shutil.rmtree(revision_root, ignore_errors=False)
+            return {"status": "ok", "message": f"Revisão {revision_id} excluída com sucesso.", "impact": impact, "cascade": cascade}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2580,7 +2898,12 @@ def create_web_app(workspace: Workspace) -> FastAPI:
     @app.post("/api/releases/{version_id}/start-train")
     def api_start_train(version_id: str, req: TrainStartReq):
         try:
-            train_timestamp_id = f"t_{datetime.now().strftime('%y%m%d%H%M')}"
+            if importlib.util.find_spec("ultralytics") is None:
+                raise WorkflowError(
+                    "Ultralytics nao esta instalado no ambiente do Dataset Studio. "
+                    "Execute: uv sync --all-extras"
+                )
+            train_timestamp_id = f"t_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:6]}"
             params = TrainingParams(
                 model=req.model,
                 epochs=req.epochs,
@@ -2593,6 +2916,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 optimizer=req.optimizer,
                 project=str(workspace.root / "runs" / "detect"),
                 name=train_timestamp_id,
+                extra_args={"exist_ok": True},
             )
             recipe = training_recipe(workspace, version_id, params)
             job = job_manager.enqueue_training(
@@ -2665,11 +2989,11 @@ def main() -> None:
     if not args.no_browser:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
-    print(f"\n============================================================")
-    print(f" DATASET STUDIO - PAINEL INTERATIVO LOCAL")
+    print("\n============================================================")
+    print(" DATASET STUDIO - PAINEL INTERATIVO LOCAL")
     print(f" Servidor rodando em: {url}")
     print(f" Workspace: {ws.root}")
-    print(f"============================================================\n")
+    print("============================================================\n")
 
     uvicorn.run(app, host=args.host, port=args.port)
 

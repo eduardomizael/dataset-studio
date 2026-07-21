@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -422,7 +423,12 @@ def yolo_prediction_to_ls(
     }
 
 
-def build_import_tasks(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> Path:
+def build_import_tasks(
+    defaults_or_ws: dict[str, Any] | Workspace,
+    source_id: str,
+    *,
+    include_predictions: bool = True,
+) -> Path:
     """Gera o arquivo import_tasks.json com as pré-anotações formatadas para o Label Studio.
 
     Args:
@@ -433,6 +439,11 @@ def build_import_tasks(defaults_or_ws: dict[str, Any] | Workspace, source_id: st
         Caminho do arquivo import_tasks.json gerado.
     """
 
+    output = import_tasks_path(defaults_or_ws, source_id)
+    if output.exists():
+        raise WorkflowError(
+            "import_tasks.json ja foi gerado; a origem esta fixada e nao pode ser alterada."
+        )
     source = load_source(defaults_or_ws, source_id)
     manifest = load_frame_manifest(defaults_or_ws, source_id)
     root = source_root(defaults_or_ws, source_id)
@@ -448,7 +459,9 @@ def build_import_tasks(defaults_or_ws: dict[str, Any] | Workspace, source_id: st
             yolo_prediction_to_ls(
                 prediction, frame=frame, class_names=class_names, index=index
             )
-            for index, prediction in enumerate(frame.get("predictions", []))
+            for index, prediction in enumerate(
+                frame.get("predictions", []) if include_predictions else []
+            )
         ]
         task = {
             "data": {
@@ -461,26 +474,48 @@ def build_import_tasks(defaults_or_ws: dict[str, Any] | Workspace, source_id: st
                 "original_width": frame["width"],
                 "original_height": frame["height"],
             },
-            "predictions": [
+            "predictions": ([
                 {
                     "model_version": (manifest.get("model_sha256") or "no-model")[:12],
                     "score": 0.0,
                     "result": results,
                 }
-            ],
+            ] if include_predictions else []),
         }
         tasks.append(task)
-    output = import_tasks_path(defaults_or_ws, source_id)
     output.write_text(json.dumps(tasks, indent=2, ensure_ascii=False), encoding="utf-8")
     return output
 
 
-def delete_source(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> None:
+def delete_source(
+    defaults_or_ws: dict[str, Any] | Workspace,
+    source_id: str,
+    *,
+    delete_video_files: bool = False,
+) -> None:
     """Remove completamente a pasta da origem de dados do disco."""
     root = source_root(defaults_or_ws, source_id)
     if not root.exists():
         raise WorkflowError(f"Origem não encontrada: {source_id}")
+    source = load_source(defaults_or_ws, source_id)
+    isolated_videos_dir: Path | None = None
+    selected_video_paths: list[Path] = []
+    if isinstance(defaults_or_ws, Workspace):
+        candidate = defaults_or_ws.resolve_path(source["videos"]["directory"]).resolve()
+        for item in source["videos"].get("files", []):
+            name = item["name"] if isinstance(item, dict) else str(item)
+            path = (candidate / name).resolve()
+            if path.parent == candidate:
+                selected_video_paths.append(path)
+        expected = (defaults_or_ws.videos_root / source_id).resolve()
+        if candidate == expected:
+            isolated_videos_dir = candidate
     shutil.rmtree(root, ignore_errors=False)
+    if isolated_videos_dir is not None and isolated_videos_dir.is_dir():
+        shutil.rmtree(isolated_videos_dir, ignore_errors=False)
+    elif delete_video_files:
+        for video_path in selected_video_paths:
+            video_path.unlink(missing_ok=True)
 
 
 # Aliases de retrocompatibilidade para campaign -> source

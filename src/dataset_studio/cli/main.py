@@ -4,25 +4,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from dataset_studio.application import (
     TrainingParams,
-    campaign_status,
-    release_status,
     training_recipe,
+    source_status,
+    version_status,
 )
 from dataset_studio.domain import (
     Workspace,
     accept_native_export,
     build_import_tasks,
-    build_release,
-    create_campaign,
-    create_release,
-    inspect_native_export,
-    list_campaigns,
-    list_releases,
+    build_version,
+    create_source,
+    create_version,
+    list_sources,
+    list_versions,
 )
 
 

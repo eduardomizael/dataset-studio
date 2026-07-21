@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import shutil
+import uuid
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -155,15 +157,16 @@ def create_version(
     return path
 
 
-def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -> Path:
-    """Materializa fisicamente os dados, estrutura de arquivos e manifesto de uma versão."""
-
-    root = version_root(defaults_or_ws, version_id)
-    config_p = version_config_path(defaults_or_ws, version_id)
+def _materialize_version(
+    defaults_or_ws: dict[str, Any] | Workspace,
+    version_id: str,
+    *,
+    root: Path,
+    config_p: Path,
+    final_root: Path,
+) -> Path:
     version = load_yaml(config_p)
     manifest_path = root / "manifest.csv"
-    if manifest_path.exists():
-        raise WorkflowError("A versao ja foi materializada e e imutavel.")
     split_by_video = {
         key: split
         for split, keys in version["assignments"].items()
@@ -207,6 +210,8 @@ def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -
                         "label": "",
                         "boxes": "0",
                         "source_image_sha256": sha256(source_image),
+                        "image_sha256": "",
+                        "label_sha256": "",
                     }
                 )
                 continue
@@ -231,6 +236,8 @@ def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -
                     "label": destination_label.relative_to(root).as_posix(),
                     "boxes": str(len(annotation.boxes)),
                     "source_image_sha256": sha256(source_image),
+                    "image_sha256": sha256(source_image),
+                    "label_sha256": hashlib.sha256(label_text.encode("utf-8")).hexdigest(),
                 }
             )
 
@@ -261,7 +268,7 @@ def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -
 
     names = {index: name for index, name in enumerate(version["classes"])}
     data_yaml = {
-        "path": str(root.resolve()),
+        "path": str(final_root.resolve()),
         "train": "images/train",
         "val": "images/val",
         "names": names,
@@ -294,6 +301,7 @@ def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -
         "boxes": sum(int(row["boxes"]) for row in included_rows),
         "splits": dict(included_splits),
         "manifest_sha256": sha256(manifest_path),
+        "version_config_sha256": sha256(config_p),
     }
     (root / "build_report.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -301,17 +309,50 @@ def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -
     return manifest_path
 
 
-def delete_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -> None:
-    """Remove completamente a pasta da versão/release de dataset e treinos associados do disco."""
-    root = version_root(defaults_or_ws, version_id)
-    if root.exists():
-        shutil.rmtree(root, ignore_errors=False)
+def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -> Path:
+    """Materializa a versão em staging e a publica somente após sucesso integral."""
+    final_root = version_root(defaults_or_ws, version_id)
+    config_p = version_config_path(defaults_or_ws, version_id)
+    if (final_root / "manifest.csv").exists():
+        raise WorkflowError("A versao ja foi materializada e e imutavel.")
+    if not config_p.is_file():
+        raise WorkflowError(f"Configuracao da versao nao encontrada: {config_p}")
 
-    # Remove pasta de treinamentos associada em runs/detect/<version_id> se existir
-    if isinstance(defaults_or_ws, Workspace):
-        runs_dir = defaults_or_ws.root / "runs" / "detect" / version_id
-        if runs_dir.exists():
-            shutil.rmtree(runs_dir, ignore_errors=True)
+    parent = final_root.parent
+    token = uuid.uuid4().hex
+    staging_root = parent / f".{version_id}.build-{token}"
+    backup_root = parent / f".{version_id}.backup-{token}"
+    staging_root.mkdir(parents=True)
+    staging_config = staging_root / "version.yaml"
+    shutil.copy2(config_p, staging_config)
+    try:
+        _materialize_version(
+            defaults_or_ws,
+            version_id,
+            root=staging_root,
+            config_p=staging_config,
+            final_root=final_root,
+        )
+        final_root.rename(backup_root)
+        try:
+            staging_root.rename(final_root)
+        except Exception:
+            backup_root.rename(final_root)
+            raise
+        shutil.rmtree(backup_root, ignore_errors=False)
+        return final_root / "manifest.csv"
+    except Exception:
+        if staging_root.exists():
+            shutil.rmtree(staging_root, ignore_errors=True)
+        raise
+
+
+def delete_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -> None:
+    """Remove completamente a versão; treinamentos são recursos independentes."""
+    root = version_root(defaults_or_ws, version_id)
+    if not root.exists():
+        raise WorkflowError(f"Versão não encontrada: {version_id}")
+    shutil.rmtree(root, ignore_errors=False)
 
 
 # Aliases de retrocompatibilidade para release -> version
