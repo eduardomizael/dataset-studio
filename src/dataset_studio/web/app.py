@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import json
+import re
 import shutil
 import uvicorn
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ from typing import Any, Literal
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from dataset_studio.adapters.label_studio.runner import (
@@ -44,6 +46,8 @@ from dataset_studio.domain import (
     create_release,
     create_source,
     create_version,
+    delete_source,
+    delete_version,
     list_campaigns,
     list_releases,
     list_sources,
@@ -84,6 +88,7 @@ class SourceCreateReq(BaseModel):
     video_pattern: str = "*.mp4"
 
     video_files: list[str] | None = None
+    video_notes: dict[str, str] | None = None
     classes: list[str] = Field(default_factory=lambda: ["objeto"])
 
     @property
@@ -264,6 +269,12 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     </div>
                 </div>
 
+                <!-- Container de Notas Individuais por Vídeo -->
+                <div id="video-notes-container" class="hidden space-y-2 max-h-48 overflow-y-auto pr-1">
+                    <label class="block text-slate-300 font-medium text-xs">Observações / Comentários por Vídeo (opcional):</label>
+                    <div id="video-notes-list" class="space-y-2"></div>
+                </div>
+
                 <div>
                     <label class="block text-slate-300 font-medium mb-1">Classes de Objetos (separadas por vírgula)</label>
                     <input type="text" id="input-classes" value="peixe" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:border-indigo-500 focus:outline-none">
@@ -292,12 +303,29 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         function handleVideoSelection(input) {
             const files = input.files;
             const infoDiv = document.getElementById('selected-video-count');
+            const notesContainer = document.getElementById('video-notes-container');
+            const notesList = document.getElementById('video-notes-list');
+
             if (files && files.length > 0) {
                 const names = Array.from(files).map(f => f.name).join(', ');
-                infoDiv.innerText = `✓ ${files.length} vídeo(s) selecionado(s): ${names}`;
+                infoDiv.innerText = `✓ ${files.length} vídeo(s) selecionado(s)`;
                 infoDiv.classList.remove('hidden');
+
+                let notesHtml = '';
+                Array.from(files).forEach((f, idx) => {
+                    notesHtml += `
+                        <div class="p-2.5 bg-slate-800/60 border border-slate-700/60 rounded-lg space-y-1">
+                            <div class="text-xs font-mono font-medium text-indigo-300">${escapeHtml(f.name)}</div>
+                            <input type="text" data-video-note-name="${escapeHtml(f.name)}" placeholder="Ex: Iluminação baixa, peixes rápidos, câmera 2..." class="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none">
+                        </div>
+                    `;
+                });
+                notesList.innerHTML = notesHtml;
+                notesContainer.classList.remove('hidden');
             } else {
                 infoDiv.classList.add('hidden');
+                notesContainer.classList.add('hidden');
+                notesList.innerHTML = '';
             }
         }
 
@@ -319,11 +347,20 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
 
             const classes = classesRaw ? classesRaw.split(',').map(c => c.trim()).filter(Boolean) : ['objeto'];
+            const videoNotes = {};
+            document.querySelectorAll('[data-video-note-name]').forEach(inp => {
+                const name = inp.getAttribute('data-video-note-name');
+                const note = inp.value.trim();
+                if (name && note) {
+                    videoNotes[name] = note;
+                }
+            });
 
             const formData = new FormData();
             formData.append('source_id', id);
             formData.append('campaign_id', id);
             formData.append('classes', JSON.stringify(classes));
+            formData.append('video_notes', JSON.stringify(videoNotes));
             for (const file of filesInput.files) {
                 formData.append('videos', file);
             }
@@ -380,24 +417,27 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         const targetId = st.source_id || st.campaign_id;
                         
                         html += `
-                            <a href="/source.html?id=${targetId}" class="block p-5 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-indigo-500/50 hover:bg-slate-800/70 transition group">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h3 class="font-bold text-indigo-300 text-lg group-hover:text-indigo-200">${targetId}</h3>
-                                        <div class="text-xs text-slate-400 mt-0.5">
-                                            Vídeos: <span class="text-slate-200 font-mono">${st.videos}</span> | 
-                                            Frames: <span class="text-slate-200 font-mono">${st.frames}</span> | 
-                                            Tasks: <span class="text-slate-200 font-mono">${st.import_tasks}</span>
+                            <div class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-indigo-500/50 hover:bg-slate-800/70 transition group relative">
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <h3 class="font-bold text-indigo-300 text-base group-hover:text-indigo-200 truncate min-w-0 flex-1" title="${escapeHtml(targetId)}">${escapeHtml(targetId)}</h3>
+                                        <div class="flex items-center gap-1.5">
+                                            <span class="px-2 py-0.5 bg-slate-800 text-indigo-400 border border-indigo-500/30 rounded text-[11px] font-semibold whitespace-nowrap">
+                                                ${st.next_action}
+                                            </span>
+                                            <button onclick="deleteSource(event, '${escapeHtml(targetId)}')" title="Excluir origem do disco" class="p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
                                         </div>
                                     </div>
-                                    <span class="px-2.5 py-1 bg-slate-800 text-indigo-400 border border-indigo-500/30 rounded-md text-xs font-semibold">
-                                        Etapa: ${st.next_action}
-                                    </span>
+                                    <div class="text-xs text-slate-400">
+                                        Vídeos: <span class="text-slate-200 font-mono font-medium">${st.videos}</span> | 
+                                        Frames: <span class="text-slate-200 font-mono font-medium">${st.frames}</span> | 
+                                        Tasks: <span class="text-slate-200 font-mono font-medium">${st.import_tasks}</span>
+                                    </div>
                                 </div>
-                                <div class="text-xs text-indigo-400 font-medium pt-1 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                <a href="/source.html?id=${targetId}" class="text-xs text-indigo-400 font-medium pt-1 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                     <span>Ver detalhes e etapas</span> &rarr;
-                                </div>
-                            </a>
+                                </a>
+                            </div>
                         `;
                     }
                     divC.innerHTML = html;
@@ -412,13 +452,21 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     divR.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">Nenhuma versão materializada ainda.</p>';
                 } else {
                     divR.innerHTML = versions.map(v => `
-                        <a href="/version.html?id=${v}" class="block p-4 bg-slate-800/40 border border-slate-800 rounded-xl flex justify-between items-center hover:border-emerald-500/50 hover:bg-slate-800/70 transition group">
-                            <div>
-                                <div class="font-bold text-emerald-400 group-hover:text-emerald-300">${v}</div>
-                                <div class="text-xs text-slate-400">Clique para ver detalhes, splits e treinar</div>
+                        <div class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-emerald-500/50 hover:bg-slate-800/70 transition group">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1 space-y-1">
+                                    <div class="font-bold text-emerald-400 group-hover:text-emerald-300 text-sm truncate" title="${escapeHtml(v)}">${escapeHtml(v)}</div>
+                                    <div class="text-xs text-slate-400">Clique para ver detalhes, splits e treinar</div>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[11px] font-semibold whitespace-nowrap">Materializada</span>
+                                    <button onclick="deleteRelease(event, '${escapeHtml(v)}')" title="Excluir release e arquivos do disco" class="p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
+                                </div>
                             </div>
-                            <span class="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-xs font-semibold">Materializada &rarr;</span>
-                        </a>
+                            <a href="/version.html?id=${v}" class="text-xs text-emerald-400 font-medium pt-1 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                <span>Acessar release</span> &rarr;
+                            </a>
+                        </div>
                     `).join('');
                 }
 
@@ -431,20 +479,85 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     divT.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">Nenhum treinamento realizado ainda.</p>';
                 } else {
                     divT.innerHTML = trainings.map(t => `
-                        <div class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl flex justify-between items-center">
-                            <div>
-                                <div class="font-bold text-amber-400">${t.name}</div>
-                                <div class="text-xs text-slate-400">Modelo: ${t.model || 'N/A'} | Status: ${t.status}</div>
+                        <div class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-amber-500/50 hover:bg-slate-800/70 transition group">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1 space-y-1">
+                                    <div class="font-bold text-amber-400 group-hover:text-amber-300 text-sm truncate font-mono" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</div>
+                                    <div class="text-xs text-slate-400">Modelo: <span class="text-slate-300 font-medium">${escapeHtml(t.model || 'N/A')}</span></div>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded text-[11px] font-semibold whitespace-nowrap">${escapeHtml(t.status)}</span>
+                                    <button onclick="deleteTraining(event, '${escapeHtml(t.name)}')" title="Excluir treinamento do disco" class="p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
+                                </div>
                             </div>
-                            <span class="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md text-xs font-semibold">${t.status}</span>
+                            <a href="/training.html?id=${encodeURIComponent(t.name)}" class="text-xs text-amber-400 font-medium pt-1 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                <span>Ver detalhes e métricas</span> &rarr;
+                            </a>
                         </div>
                     `).join('');
                 }
 
             } catch (err) {
                 console.error(err);
+                divC.innerHTML = `<p class="text-rose-400 text-xs p-3">Erro ao carregar origens: ${escapeHtml(err.message)}</p>`;
             }
         }
+
+        async function deleteSource(event, sourceId) {
+            if (event) event.stopPropagation();
+            if (!confirm(`ATENÇÃO: Deseja realmente excluir a origem '${sourceId}'? Todos os arquivos e quadros extraídos no disco serão APAGADOS permanentemente.`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/sources/${encodeURIComponent(sourceId)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao excluir origem.');
+                alert(data.message || 'Origem excluída com sucesso!');
+                loadData();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function deleteRelease(event, versionId) {
+            if (event) event.stopPropagation();
+            if (!confirm(`ATENÇÃO: Deseja realmente excluir a Release '${versionId}'? O dataset compilado e treinos associados em disco serão APAGADOS permanentemente.`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/releases/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao excluir release.');
+                alert(data.message || 'Release excluída com sucesso!');
+                loadData();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function deleteTraining(event, trainingId) {
+            if (event) event.stopPropagation();
+            if (!confirm(`ATENÇÃO: Deseja realmente excluir o treinamento '${trainingId}'? Todos os arquivos de logs e pesos (.pt) no disco serão APAGADOS.`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/trainings/${encodeURIComponent(trainingId)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao excluir treinamento.');
+                alert(data.message || 'Treinamento excluído com sucesso!');
+                loadData();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         loadData();
     </script>
 </body>
@@ -665,65 +778,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         </p>
                     </div>
 
-                    <!-- Painel de Métricas da Exportação Detectada -->
-                    <div id="finished-metrics-panel" class="hidden bg-slate-900 border border-emerald-500/40 rounded-xl p-4 space-y-4">
-                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                            <div class="space-y-1">
-                                <h4 class="font-bold text-emerald-400 text-sm flex items-center gap-2">
-                                    <span>✓</span> Exportação de Anotações Detectada!
-                                </h4>
-                                <p class="text-xs text-slate-400">Selecione qual versão do JSON exportado do Label Studio você deseja utilizar:</p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <select id="finished-files-select" onchange="onFinishedExportSelected()" class="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg p-2 font-mono">
-                                    <option value="">Carregando JSONs...</option>
-                                </select>
-                                <button onclick="acceptSelectedFinishedExport()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition shadow-md shadow-emerald-600/20 whitespace-nowrap">
-                                    ✓ Usar este JSON
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Cards de Métricas em Tempo Real do JSON Selecionado -->
-                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
-                                <div class="text-slate-400 text-[11px] font-medium">📷 Total Imagens</div>
-                                <div class="text-lg font-bold text-indigo-300 font-mono mt-1" id="m-tasks">0</div>
-                            </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-emerald-500/30">
-                                <div class="text-emerald-400 text-[11px] font-medium">✓ Anotadas</div>
-                                <div class="text-lg font-bold text-emerald-300 font-mono mt-1" id="m-completed">0</div>
-                            </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-amber-500/30">
-                                <div class="text-amber-400 text-[11px] font-medium">⏳ Não Anotadas</div>
-                                <div class="text-lg font-bold text-amber-300 font-mono mt-1" id="m-deferred">0</div>
-                            </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-rose-500/30">
-                                <div class="text-rose-400 text-[11px] font-medium">🚫 Canceladas</div>
-                                <div class="text-lg font-bold text-rose-300 font-mono mt-1" id="m-cancelled">0</div>
-                            </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
-                                <div class="text-slate-400 text-[11px] font-medium">📦 Caixas de Anotação</div>
-                                <div class="text-lg font-bold text-indigo-200 font-mono mt-1" id="m-boxes">0</div>
-                            </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
-                                <div class="text-slate-400 text-[11px] font-medium">⚪ Negativos</div>
-                                <div class="text-lg font-bold text-slate-300 font-mono mt-1" id="m-negs">0</div>
-                            </div>
-                        </div>
-
-                        <div class="p-3 bg-slate-800/40 rounded-lg border border-slate-800 flex items-center justify-between text-xs">
-                            <span class="text-slate-400 font-medium">🏷️ Contagem por Classe:</span>
-                            <span class="font-bold text-purple-300 font-mono" id="m-classes">-</span>
-                        </div>
-
-                        <div class="pt-2 flex justify-between items-center">
-                            <span id="active-revision-badge" class="text-xs text-slate-400 font-mono"></span>
-                            <button onclick="createReleaseFromCampaign()" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center gap-1">
-                                <span>📦 Seguir para Criar Release</span>
-                                <span>&rarr;</span>
-                            </button>
-                        </div>
+                    <!-- Container de Painéis Individuais para Cada Exportação JSON Detectada -->
+                    <div id="finished-exports-container" class="hidden space-y-4">
+                        <!-- Painéis gerados dinamicamente via JS -->
                     </div>
 
                 </div>
@@ -878,40 +935,8 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
         }
 
-        let currentFinishedInfo = null;
-
-        function renderExportMetrics(metrics) {
-            if (!metrics) return;
-            document.getElementById('m-tasks').innerText = metrics.total_tasks || 0;
-            document.getElementById('m-completed').innerText = metrics.tasks_completed || 0;
-            document.getElementById('m-deferred').innerText = metrics.tasks_deferred || 0;
-            document.getElementById('m-cancelled').innerText = metrics.tasks_cancelled || 0;
-            document.getElementById('m-boxes').innerText = metrics.total_boxes || 0;
-            document.getElementById('m-negs').innerText = metrics.confirmed_negatives || 0;
-
-            const clsEntries = Object.entries(metrics.class_counts || {});
-            document.getElementById('m-classes').innerText = clsEntries.length > 0
-                ? clsEntries.map(([k, v]) => `${k}: ${v}`).join(', ')
-                : 'Nenhuma caixa registrada';
-        }
-
-        function onFinishedExportSelected() {
-            const sel = document.getElementById('finished-files-select');
-            const selectedPath = sel ? sel.value : null;
-            if (!currentFinishedInfo || !currentFinishedInfo.exports) return;
-            const item = currentFinishedInfo.exports.find(e => e.path === selectedPath);
-            if (item && item.metrics) {
-                renderExportMetrics(item.metrics);
-            }
-        }
-
-        async function acceptSelectedFinishedExport() {
-            const sel = document.getElementById('finished-files-select');
-            const selectedPath = sel ? sel.value : null;
-            if (!selectedPath) {
-                alert('Selecione um arquivo JSON exportado.');
-                return;
-            }
+        async function acceptAndCreateReleaseForExport(selectedPath, exportName) {
+            if (!selectedPath) return;
 
             try {
                 const res = await fetch(`/api/campaigns/${campaignId}/accept-export`, {
@@ -919,10 +944,19 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ path: selectedPath, allow_pending: true })
                 });
-                const data = await res.json();
+                const contentType = res.headers.get('content-type') || '';
+                let data = {};
+                if (contentType.includes('application/json')) {
+                    data = await res.json();
+                } else {
+                    const text = await res.text();
+                    throw new Error(`Erro do servidor (${res.status}): ${text.slice(0, 150)}`);
+                }
                 if (!res.ok) throw new Error(data.detail || 'Erro ao aceitar o JSON selecionado.');
-                alert('Versão das anotações aceita e registrada para a Release!');
-                loadCampaignDetails();
+                
+                const cleanName = exportName ? exportName.replace(new RegExp('\\.json$', 'i'), '') : 'release';
+                const relId = `release_${campaignId}_${cleanName}`;
+                window.location.href = `/release.html?campaign=${campaignId}&id=${encodeURIComponent(relId)}`;
             } catch (err) {
                 alert(err.message);
             }
@@ -1039,37 +1073,84 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
                 // finished_tasks info
                 const fin = st.finished_info || {};
-                currentFinishedInfo = fin;
                 document.getElementById('finished-tasks-path').innerText = fin.finished_tasks_dir || `campaigns/${campaignId}/label_studio/finished_tasks`;
 
+                const container = document.getElementById('finished-exports-container');
                 if (fin.found && fin.exports && fin.exports.length > 0) {
                     document.getElementById('step-4-status').className = "text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-md";
                     document.getElementById('step-4-status').innerText = "✓ Concluído";
-                    document.getElementById('finished-metrics-panel').classList.remove('hidden');
+                    container.classList.remove('hidden');
 
-                    const selExport = document.getElementById('finished-files-select');
-                    if (selExport) {
-                        const previousValue = selExport.value;
-                        selExport.innerHTML = fin.exports.map(exp => {
-                            const boxes = exp.metrics ? (exp.metrics.total_boxes || 0) : 0;
-                            const completed = exp.metrics ? (exp.metrics.tasks_completed || 0) : 0;
-                            const deferred = exp.metrics ? (exp.metrics.tasks_deferred || 0) : 0;
-                            const cancelled = exp.metrics ? (exp.metrics.tasks_cancelled || 0) : 0;
-                            const label = exp.error ? `${exp.name} (Erro)` : `${exp.name} (${completed} anotadas, ${deferred} pendentes, ${cancelled} canceladas, ${boxes} caixas)`;
-                            return `<option value="${escapeHtml(exp.path)}">${escapeHtml(label)}</option>`;
-                        }).join('');
-                        if (previousValue && fin.exports.some(e => e.path === previousValue)) {
-                            selExport.value = previousValue;
-                        }
-                    }
+                    let panelsHtml = '';
+                    fin.exports.forEach(exp => {
+                        const m = exp.metrics || {};
+                        const clsEntries = Object.entries(m.class_counts || {});
+                        const clsText = clsEntries.length > 0
+                            ? clsEntries.map(([k, v]) => `${k}: ${v}`).join(', ')
+                            : 'Nenhuma caixa registrada';
 
-                    onFinishedExportSelected();
+                        panelsHtml += `
+                            <div class="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition rounded-xl p-4 space-y-4">
+                                <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                                    <div class="flex items-center gap-2.5">
+                                        <span class="text-base">📄</span>
+                                        <div>
+                                            <h4 class="font-bold text-slate-100 text-sm font-mono">${escapeHtml(exp.name)}</h4>
+                                            <p class="text-[11px] text-slate-400">Arquivo JSON de exportação do Label Studio</p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <button onclick="acceptAndCreateReleaseForExport(decodeURIComponent('${encodeURIComponent(exp.path)}'), decodeURIComponent('${encodeURIComponent(exp.name)}'))" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs rounded-lg shadow-md shadow-purple-600/30 transition flex items-center gap-1.5 whitespace-nowrap">
+                                            <span>📦 Criar Release com este JSON</span>
+                                            <span>&rarr;</span>
+                                        </button>
+                                    </div>
+                                </div>
 
-                    const activeRev = st.latest_annotation_revision || (st.annotation_revisions && st.annotation_revisions.length > 0 ? st.annotation_revisions[st.annotation_revisions.length - 1].revision_id : null);
-                    const activeBadge = document.getElementById('active-revision-badge');
-                    if (activeBadge) {
-                        activeBadge.innerText = activeRev ? `Revisão Ativa para Release: ${activeRev}` : '';
-                    }
+                                <!-- Cards de Métricas em Tempo Real -->
+                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
+                                    <div class="p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                                        <div class="text-slate-400 text-[11px] font-medium">📷 Total Imagens</div>
+                                        <div class="text-lg font-bold text-indigo-300 font-mono mt-1">${m.total_tasks || 0}</div>
+                                    </div>
+                                    <div class="p-3 bg-slate-800/50 rounded-lg border border-emerald-500/30">
+                                        <div class="text-emerald-400 text-[11px] font-medium">✓ Anotadas</div>
+                                        <div class="text-lg font-bold text-emerald-300 font-mono mt-1">${m.tasks_completed || 0}</div>
+                                    </div>
+                                    <div class="p-3 bg-slate-800/50 rounded-lg border border-amber-500/30">
+                                        <div class="text-amber-400 text-[11px] font-medium">⏳ Não Anotadas</div>
+                                        <div class="text-lg font-bold text-amber-300 font-mono mt-1">${m.tasks_deferred || 0}</div>
+                                    </div>
+                                    <div class="p-3 bg-slate-800/50 rounded-lg border border-rose-500/30">
+                                        <div class="text-rose-400 text-[11px] font-medium">🚫 Canceladas</div>
+                                        <div class="text-lg font-bold text-rose-300 font-mono mt-1">${m.tasks_cancelled || 0}</div>
+                                    </div>
+                                    <div class="p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                                        <div class="text-slate-400 text-[11px] font-medium">📦 Caixas (Boxes)</div>
+                                        <div class="text-lg font-bold text-indigo-200 font-mono mt-1">${m.total_boxes || 0}</div>
+                                    </div>
+                                    <div class="p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                                        <div class="text-slate-400 text-[11px] font-medium">⚪ Negativos</div>
+                                        <div class="text-lg font-bold text-slate-300 font-mono mt-1">${m.confirmed_negatives || 0}</div>
+                                    </div>
+                                </div>
+
+                                <div class="p-3 bg-slate-800/30 rounded-lg border border-slate-800 flex items-center justify-between text-xs">
+                                    <span class="text-slate-400 font-medium">🏷️ Contagem por Classe:</span>
+                                    <span class="font-bold text-purple-300 font-mono">${escapeHtml(clsText)}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = panelsHtml;
+                } else {
+                    container.classList.add('hidden');
+                }
+
+                const activeRev = st.latest_annotation_revision || (st.annotation_revisions && st.annotation_revisions.length > 0 ? st.annotation_revisions[st.annotation_revisions.length - 1].revision_id : null);
+                const activeBadge = document.getElementById('active-revision-badge');
+                if (activeBadge) {
+                    activeBadge.innerText = activeRev ? `Revisão Ativa para Release: ${activeRev}` : '';
                 }
 
                 // Carregar Modelos para dropdowns
@@ -1131,42 +1212,82 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
         <!-- Seção 1: Divisão dos Vídeos e Calculadora de Splits -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-            <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2 border-b border-slate-800 pb-3">
-                <span>🎥</span> Atribuição dos Vídeos ao Dataset (Train / Val)
-            </h2>
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
+                    <span>🎥</span> Atribuição dos Vídeos ao Dataset
+                </h2>
+                <div class="flex items-center gap-2">
+                    <label class="text-xs text-slate-400 font-medium whitespace-nowrap">Nome/ID da Release:</label>
+                    <input type="text" id="input-release-id" class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-emerald-300 font-mono w-64 focus:border-emerald-500 focus:outline-none font-bold">
+                </div>
+            </div>
 
-            <!-- Cards de Métricas em Tempo Real -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="p-5 bg-slate-800/60 border-2 border-indigo-500/50 rounded-xl space-y-2">
+            <!-- Cards de Métricas em Tempo Real (4 Splits) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="p-4 bg-slate-800/60 border-2 border-indigo-500/50 rounded-xl space-y-2">
                     <div class="flex justify-between items-center">
-                        <span class="font-bold text-indigo-300 text-base">📊 Conjunto de Treino (Train)</span>
-                        <span class="text-xs bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded" id="cnt-train-videos">0 Vídeos</span>
+                        <span class="font-bold text-indigo-300 text-xs">📊 Treino (Train)</span>
+                        <span class="text-[11px] bg-indigo-500/20 text-indigo-300 font-mono px-2 py-0.5 rounded" id="cnt-train-videos">0 Vídeos</span>
                     </div>
                     <div class="flex justify-around pt-2 border-t border-slate-700/50 text-center">
                         <div>
-                            <div class="text-xs text-slate-400">Frames</div>
-                            <div class="text-xl font-bold text-indigo-200 font-mono" id="cnt-train-frames">0</div>
+                            <div class="text-[11px] text-slate-400">Frames</div>
+                            <div class="text-lg font-bold text-indigo-200 font-mono" id="cnt-train-frames">0</div>
                         </div>
                         <div>
-                            <div class="text-xs text-slate-400">Anotações</div>
-                            <div class="text-xl font-bold text-emerald-300 font-mono" id="cnt-train-boxes">0</div>
+                            <div class="text-[11px] text-slate-400">Caixas</div>
+                            <div class="text-lg font-bold text-emerald-300 font-mono" id="cnt-train-boxes">0</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="p-5 bg-slate-800/60 border-2 border-purple-500/50 rounded-xl space-y-2">
+                <div class="p-4 bg-slate-800/60 border-2 border-purple-500/50 rounded-xl space-y-2">
                     <div class="flex justify-between items-center">
-                        <span class="font-bold text-purple-300 text-base">📊 Conjunto de Validação (Val)</span>
-                        <span class="text-xs bg-purple-500/20 text-purple-300 font-mono px-2 py-0.5 rounded" id="cnt-val-videos">0 Vídeos</span>
+                        <span class="font-bold text-purple-300 text-xs">📊 Validação (Val)</span>
+                        <span class="text-[11px] bg-purple-500/20 text-purple-300 font-mono px-2 py-0.5 rounded" id="cnt-val-videos">0 Vídeos</span>
                     </div>
                     <div class="flex justify-around pt-2 border-t border-slate-700/50 text-center">
                         <div>
-                            <div class="text-xs text-slate-400">Frames</div>
-                            <div class="text-xl font-bold text-purple-200 font-mono" id="cnt-val-frames">0</div>
+                            <div class="text-[11px] text-slate-400">Frames</div>
+                            <div class="text-lg font-bold text-purple-200 font-mono" id="cnt-val-frames">0</div>
                         </div>
                         <div>
-                            <div class="text-xs text-slate-400">Anotações</div>
-                            <div class="text-xl font-bold text-amber-300 font-mono" id="cnt-val-boxes">0</div>
+                            <div class="text-[11px] text-slate-400">Caixas</div>
+                            <div class="text-lg font-bold text-amber-300 font-mono" id="cnt-val-boxes">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 bg-slate-800/60 border-2 border-amber-500/50 rounded-xl space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-amber-300 text-xs">📊 Teste Normal</span>
+                        <span class="text-[11px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded" id="cnt-test-normal-videos">0 Vídeos</span>
+                    </div>
+                    <div class="flex justify-around pt-2 border-t border-slate-700/50 text-center">
+                        <div>
+                            <div class="text-[11px] text-slate-400">Frames</div>
+                            <div class="text-lg font-bold text-amber-200 font-mono" id="cnt-test-normal-frames">0</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] text-slate-400">Caixas</div>
+                            <div class="text-lg font-bold text-amber-400 font-mono" id="cnt-test-normal-boxes">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 bg-slate-800/60 border-2 border-rose-500/50 rounded-xl space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-rose-300 text-xs">📊 Teste Estresse</span>
+                        <span class="text-[11px] bg-rose-500/20 text-rose-300 font-mono px-2 py-0.5 rounded" id="cnt-test-stress-videos">0 Vídeos</span>
+                    </div>
+                    <div class="flex justify-around pt-2 border-t border-slate-700/50 text-center">
+                        <div>
+                            <div class="text-[11px] text-slate-400">Frames</div>
+                            <div class="text-lg font-bold text-rose-200 font-mono" id="cnt-test-stress-frames">0</div>
+                        </div>
+                        <div>
+                            <div class="text-[11px] text-slate-400">Caixas</div>
+                            <div class="text-lg font-bold text-rose-400 font-mono" id="cnt-test-stress-boxes">0</div>
                         </div>
                     </div>
                 </div>
@@ -1188,15 +1309,20 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         </div>
 
         <!-- Seção 2: Treinamento do Modelo -->
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-            <h2 class="text-xl font-bold text-amber-400 flex items-center gap-2 border-b border-slate-800 pb-3">
-                <span>⚡</span> Treinamento do Modelo YOLO
-            </h2>
+        <div id="training-section-container" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6 opacity-60 pointer-events-none transition-all">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                <h2 class="text-xl font-bold text-amber-400 flex items-center gap-2">
+                    <span>⚡</span> Treinamento do Modelo YOLO
+                </h2>
+                <div id="training-lock-notice" class="text-xs font-semibold text-amber-400/90 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg flex items-center gap-1.5">
+                    <span>🔒</span> <span>Materialize o dataset acima para liberar o treinamento</span>
+                </div>
+            </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div>
                     <label class="block text-slate-300 font-medium mb-1">Modelo de Partida</label>
-                    <select id="train-model-select" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white text-xs">
+                    <select id="train-model-select" disabled class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white text-xs disabled:opacity-50">
                         <option value="yolo26n.pt">yolo26n.pt (Novo Modelo Base)</option>
                         <option value="yolov8n.pt">yolov8n.pt (Modelo YOLOv8 Nano)</option>
                     </select>
@@ -1204,31 +1330,49 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
                 <div>
                     <label class="block text-slate-300 font-medium mb-1">Épocas (epochs)</label>
-                    <input type="number" id="train-epochs-input" value="50" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white">
+                    <input type="number" id="train-epochs-input" value="50" disabled class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white disabled:opacity-50">
                 </div>
 
                 <div>
                     <label class="block text-slate-300 font-medium mb-1">Tamanho Imagem (imgsz)</label>
-                    <input type="number" id="train-imgsz-input" value="640" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white">
+                    <input type="number" id="train-imgsz-input" value="640" disabled class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white disabled:opacity-50">
                 </div>
             </div>
 
             <div>
-                <button onclick="startTrainingProcess()" id="btn-start-train" class="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-600/30 transition">
-                    🚀 Iniciar Treinamento
+                <button onclick="startTrainingProcess()" id="btn-start-train" disabled class="px-6 py-3 bg-slate-700 text-slate-400 font-bold text-xs rounded-xl transition cursor-not-allowed">
+                    🔒 Treinamento Indisponível (Materialize o Dataset Primeiro)
                 </button>
             </div>
 
-            <!-- Terminal em Tempo Real -->
-            <div id="terminal-section" class="hidden space-y-3">
+            <!-- Fila e Treinamentos em Andamento / Agendados -->
+            <div id="training-queue-container" class="space-y-3 pt-4 border-t border-slate-800">
                 <div class="flex justify-between items-center">
                     <h3 class="font-bold text-slate-200 text-sm flex items-center gap-2">
-                        <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-                        Monitoramento do Treinamento em Tempo Real
+                        <span>📋</span> Fila e Histórico de Treinamentos para esta Release
                     </h3>
-                    <span id="job-status-tag" class="text-xs font-mono text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded">Executando...</span>
+                    <button onclick="loadReleaseJobs()" class="text-xs text-amber-400 hover:underline">🔄 Atualizar Fila</button>
                 </div>
-                <pre id="terminal-logs" class="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 h-64 overflow-y-auto">Iniciando job...</pre>
+                <div id="training-jobs-list" class="space-y-2 text-xs">
+                    <p class="text-slate-500 italic">Nenhum treinamento agendado ou em execução.</p>
+                </div>
+            </div>
+
+            <!-- Terminal de Logs em Tempo Real -->
+            <div id="terminal-section" class="hidden space-y-3 pt-4 border-t border-slate-800">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-slate-200 text-sm flex items-center gap-2">
+                        <span id="active-job-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                        Monitoramento do Treinamento: <span id="active-job-id" class="font-mono text-amber-300">...</span>
+                    </h3>
+                    <div class="flex items-center gap-2">
+                        <span id="job-status-tag" class="text-xs font-mono text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-md border border-amber-500/30">Executando...</span>
+                        <button id="btn-stop-active-job" onclick="stopActiveJob()" class="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-md shadow-md transition">
+                            🛑 Parar Treinamento
+                        </button>
+                    </div>
+                </div>
+                <pre id="terminal-logs" class="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 h-64 overflow-y-auto">Iniciando monitoramento de logs...</pre>
             </div>
         </div>
 
@@ -1236,13 +1380,23 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const releaseId = urlParams.get('id');
-        const campaignId = urlParams.get('campaign');
+        const releaseId = urlParams.get('id') || 'release_default';
+        let campaignId = urlParams.get('campaign') || urlParams.get('source');
+
+        // Se campaignId não foi passado explicitamente, extrai do releaseId (ex: release_canaleta_pvc_260717_export)
+        if (!campaignId && releaseId && releaseId.startsWith('release_')) {
+            const parts = releaseId.replace(/^release_/, '').split('_');
+            if (parts.length >= 2) {
+                // Tenta recompor o ID da campanha
+                campaignId = parts.slice(0, -1).join('_');
+            }
+        }
 
         let videoList = [];
         let videoAssignments = {};
 
         async function updateSplitPreview() {
+            if (!campaignId) return;
             try {
                 const res = await fetch('/api/releases/preview-split', {
                     method: 'POST',
@@ -1251,19 +1405,29 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         campaign_id: campaignId,
                         assignments: {
                             train: videoList.filter(v => videoAssignments[v] === 'train').map(v => campaignId + '/' + v),
-                            val: videoList.filter(v => videoAssignments[v] === 'val').map(v => campaignId + '/' + v)
+                            val: videoList.filter(v => videoAssignments[v] === 'val').map(v => campaignId + '/' + v),
+                            test_normal: videoList.filter(v => videoAssignments[v] === 'test_normal').map(v => campaignId + '/' + v),
+                            test_stress: videoList.filter(v => videoAssignments[v] === 'test_stress').map(v => campaignId + '/' + v)
                         }
                     })
                 });
                 const data = await res.json();
                 
-                document.getElementById('cnt-train-videos').innerText = `${data.train.videos} Vídeo(s)`;
-                document.getElementById('cnt-train-frames').innerText = data.train.frames;
-                document.getElementById('cnt-train-boxes').innerText = data.train.boxes;
+                document.getElementById('cnt-train-videos').innerText = `${data.train ? data.train.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-train-frames').innerText = data.train ? data.train.frames : 0;
+                document.getElementById('cnt-train-boxes').innerText = data.train ? data.train.boxes : 0;
 
-                document.getElementById('cnt-val-videos').innerText = `${data.val.videos} Vídeo(s)`;
-                document.getElementById('cnt-val-frames').innerText = data.val.frames;
-                document.getElementById('cnt-val-boxes').innerText = data.val.boxes;
+                document.getElementById('cnt-val-videos').innerText = `${data.val ? data.val.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-val-frames').innerText = data.val ? data.val.frames : 0;
+                document.getElementById('cnt-val-boxes').innerText = data.val ? data.val.boxes : 0;
+
+                document.getElementById('cnt-test-normal-videos').innerText = `${data.test_normal ? data.test_normal.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-test-normal-frames').innerText = data.test_normal ? data.test_normal.frames : 0;
+                document.getElementById('cnt-test-normal-boxes').innerText = data.test_normal ? data.test_normal.boxes : 0;
+
+                document.getElementById('cnt-test-stress-videos').innerText = `${data.test_stress ? data.test_stress.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-test-stress-frames').innerText = data.test_stress ? data.test_stress.frames : 0;
+                document.getElementById('cnt-test-stress-boxes').innerText = data.test_stress ? data.test_stress.boxes : 0;
             } catch (err) {
                 console.error(err);
             }
@@ -1276,39 +1440,158 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
         async function materializeRelease() {
             try {
+                const targetRelId = document.getElementById('input-release-id').value.trim() || releaseId;
                 const trainV = videoList.filter(v => videoAssignments[v] === 'train').map(v => campaignId + '/' + v);
                 const valV = videoList.filter(v => videoAssignments[v] === 'val').map(v => campaignId + '/' + v);
+                const testNormalV = videoList.filter(v => videoAssignments[v] === 'test_normal').map(v => campaignId + '/' + v);
+                const testStressV = videoList.filter(v => videoAssignments[v] === 'test_stress').map(v => campaignId + '/' + v);
 
                 // Criar release
-                await fetch('/api/releases', {
+                const resC = await fetch('/api/releases', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        release_id: releaseId,
+                        release_id: targetRelId,
                         campaigns: [campaignId],
-                        assignments: { train: trainV, val: valV }
+                        assignments: {
+                            train: trainV,
+                            val: valV,
+                            test_normal: testNormalV,
+                            test_stress: testStressV
+                        }
                     })
                 });
+                const dataC = await resC.json();
+                if (!resC.ok) throw new Error(dataC.detail || 'Erro ao registrar release.');
 
                 // Materializar
-                const resB = await fetch(`/api/releases/${releaseId}/build`, { method: 'POST' });
+                const resB = await fetch(`/api/releases/${targetRelId}/build`, { method: 'POST' });
                 const dataB = await resB.json();
                 if (!resB.ok) throw new Error(dataB.detail || 'Erro na materialização');
 
                 alert('Dataset materializado com sucesso!');
                 document.getElementById('rel-status-badge').innerText = 'Status: Materializada';
+                document.getElementById('rel-title').innerText = targetRelId;
+
+                // Desbloquear seção de treinamento
+                isReleaseMaterialized = true;
+                enableTrainingSection();
             } catch (err) {
                 alert(err.message);
             }
         }
 
+        let activeJobId = null;
+        let jobPollInterval = null;
+
+        async function loadReleaseJobs() {
+            try {
+                const res = await fetch('/api/jobs');
+                const jobs = await res.json();
+                const targetRelId = document.getElementById('input-release-id')?.value.trim() || releaseId;
+                const releaseJobs = jobs.filter(j => j.target === targetRelId || j.target === releaseId);
+                const listDiv = document.getElementById('training-jobs-list');
+
+                if (!releaseJobs || releaseJobs.length === 0) {
+                    listDiv.innerHTML = '<p class="text-slate-500 italic">Nenhum treinamento agendado ou em execução.</p>';
+                    return;
+                }
+
+                let html = '';
+                releaseJobs.forEach(job => {
+                    let statusBadge = '';
+                    let actionBtn = '';
+
+                    if (job.status === 'queued') {
+                        statusBadge = '<span class="px-2 py-0.5 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded text-[11px] font-semibold">⏳ Na Fila</span>';
+                        actionBtn = `<button onclick="cancelQueuedJob('${job.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-rose-900/40 text-rose-300 border border-slate-700 hover:border-rose-500/50 rounded text-xs transition">❌ Remover da Fila</button>`;
+                    } else if (job.status === 'running') {
+                        statusBadge = '<span class="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-[11px] font-semibold animate-pulse">⚡ Em Execução</span>';
+                        actionBtn = `<button onclick="stopActiveJob('${job.id}')" class="px-2.5 py-1 bg-rose-600/20 text-rose-300 border border-rose-500/30 rounded text-xs hover:bg-rose-600 hover:text-white transition">🛑 Parar Treino</button>`;
+                    } else if (job.status === 'completed') {
+                        statusBadge = '<span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[11px] font-semibold">✅ Concluído</span>';
+                    } else if (job.status === 'stopped' || job.status === 'cancelled') {
+                        statusBadge = `<span class="px-2 py-0.5 bg-slate-800 text-slate-400 border border-slate-700 rounded text-[11px] font-semibold">⏹ Interrompido (${job.status})</span>`;
+                    } else {
+                        statusBadge = `<span class="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded text-[11px] font-semibold">❌ ${job.status}</span>`;
+                    }
+
+                    const meta = job.metadata || {};
+                    const metaStr = meta.model ? `Modelo: ${meta.model} | Épocas: ${meta.epochs} | imgsz: ${meta.imgsz}` : '';
+
+                    html += `
+                        <div class="p-3 bg-slate-800/40 border border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div class="space-y-0.5">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono font-bold text-slate-200">${job.id}</span>
+                                    ${statusBadge}
+                                </div>
+                                ${metaStr ? `<div class="text-[11px] text-slate-400 font-sans">${metaStr}</div>` : ''}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="viewJobLogs('${job.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-xs transition">👁 Ver Logs</button>
+                                ${actionBtn}
+                            </div>
+                        </div>
+                    `;
+                });
+                listDiv.innerHTML = html;
+
+                // Se houver um job rodando, ajusta o polling automático para ele
+                const runningJob = releaseJobs.find(j => j.status === 'running');
+                if (runningJob) {
+                    if (activeJobId !== runningJob.id) {
+                        viewJobLogs(runningJob.id);
+                    }
+                }
+
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function cancelQueuedJob(jobId) {
+            try {
+                const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao cancelar o treinamento agendado.');
+                loadReleaseJobs();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function stopActiveJob(targetJobId) {
+            const jId = targetJobId || activeJobId;
+            if (!jId) return;
+            if (!confirm('Deseja realmente interromper este treinamento em andamento?')) return;
+
+            try {
+                const res = await fetch(`/api/jobs/${jId}/stop`, { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao parar o treinamento.');
+                loadReleaseJobs();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function viewJobLogs(jobId) {
+            activeJobId = jobId;
+            document.getElementById('active-job-id').innerText = jobId;
+            document.getElementById('terminal-section').classList.remove('hidden');
+            if (jobPollInterval) clearInterval(jobPollInterval);
+            pollJob(jobId);
+        }
+
         async function startTrainingProcess() {
+            const targetRelId = document.getElementById('input-release-id')?.value.trim() || releaseId;
             const model = document.getElementById('train-model-select').value;
             const epochs = parseInt(document.getElementById('train-epochs-input').value);
             const imgsz = parseInt(document.getElementById('train-imgsz-input').value);
 
             try {
-                const res = await fetch(`/api/releases/${releaseId}/start-train`, {
+                const res = await fetch(`/api/releases/${targetRelId}/start-train`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1318,10 +1601,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     })
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || 'Erro ao iniciar treinamento');
+                if (!res.ok) throw new Error(data.detail || 'Erro ao agendar treinamento');
 
-                document.getElementById('terminal-section').classList.remove('hidden');
-                pollJob(data.job_id);
+                loadReleaseJobs();
+                viewJobLogs(data.id);
             } catch (err) {
                 alert(err.message);
             }
@@ -1331,7 +1614,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             const logBox = document.getElementById('terminal-logs');
             const statusTag = document.getElementById('job-status-tag');
 
-            const interval = setInterval(async () => {
+            const fetchStatus = async () => {
                 try {
                     const res = await fetch(`/api/jobs/${jobId}`);
                     const job = await res.json();
@@ -1340,52 +1623,208 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     logBox.innerText = job.log || 'Aguardando logs...';
                     logBox.scrollTop = logBox.scrollHeight;
 
-                    if (job.status === 'completed' || job.status === 'failed') {
-                        clearInterval(interval);
-                        alert(`Treinamento finalizado com status: ${job.status}`);
+                    if (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped' || job.status === 'cancelled') {
+                        if (jobPollInterval) {
+                            clearInterval(jobPollInterval);
+                            jobPollInterval = null;
+                        }
+                        loadReleaseJobs();
                     }
                 } catch (err) {
                     console.error(err);
                 }
-            }, 2000);
+            };
+
+            fetchStatus();
+            if (jobPollInterval) clearInterval(jobPollInterval);
+            jobPollInterval = setInterval(fetchStatus, 2000);
+        }
+
+        let isReleaseMaterialized = false;
+
+        function lockReleaseConfiguration() {
+            const inputRelId = document.getElementById('input-release-id');
+            const btnBuild = document.getElementById('btn-build-release');
+            if (inputRelId) inputRelId.disabled = true;
+            if (btnBuild) {
+                btnBuild.disabled = true;
+                btnBuild.className = 'px-5 py-2.5 bg-slate-800 text-slate-400 font-medium text-xs rounded-lg transition cursor-not-allowed border border-slate-700';
+                btnBuild.innerText = '✅ Dataset Materializado (Imutável)';
+            }
+            document.querySelectorAll('input[name^="role_"]').forEach(radio => {
+                radio.disabled = true;
+            });
+        }
+
+        function enableTrainingSection() {
+            const container = document.getElementById('training-section-container');
+            const notice = document.getElementById('training-lock-notice');
+            const btn = document.getElementById('btn-start-train');
+            const selModel = document.getElementById('train-model-select');
+            const inEpochs = document.getElementById('train-epochs-input');
+            const inImgsz = document.getElementById('train-imgsz-input');
+
+            if (container) {
+                container.classList.remove('opacity-60', 'pointer-events-none');
+            }
+            if (notice) {
+                notice.className = 'text-xs font-semibold text-emerald-400/90 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-lg flex items-center gap-1.5';
+                notice.innerHTML = '<span>✅</span> <span>Dataset materializado e pronto para treino</span>';
+            }
+            if (selModel) selModel.disabled = false;
+            if (inEpochs) inEpochs.disabled = false;
+            if (inImgsz) inImgsz.disabled = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.className = 'px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-600/30 transition cursor-pointer';
+                btn.innerHTML = '🚀 Iniciar Treinamento';
+            }
+            lockReleaseConfiguration();
+        }
+
+        function disableTrainingSection() {
+            const container = document.getElementById('training-section-container');
+            const notice = document.getElementById('training-lock-notice');
+            const btn = document.getElementById('btn-start-train');
+            const selModel = document.getElementById('train-model-select');
+            const inEpochs = document.getElementById('train-epochs-input');
+            const inImgsz = document.getElementById('train-imgsz-input');
+
+            if (container) {
+                container.classList.add('opacity-60', 'pointer-events-none');
+            }
+            if (notice) {
+                notice.className = 'text-xs font-semibold text-amber-400/90 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg flex items-center gap-1.5';
+                notice.innerHTML = '<span>🔒</span> <span>Materialize o dataset acima para liberar o treinamento</span>';
+            }
+            if (selModel) selModel.disabled = true;
+            if (inEpochs) inEpochs.disabled = true;
+            if (inImgsz) inImgsz.disabled = true;
+            if (btn) {
+                btn.disabled = true;
+                btn.className = 'px-6 py-3 bg-slate-700 text-slate-400 font-bold text-xs rounded-xl transition cursor-not-allowed';
+                btn.innerHTML = '🔒 Treinamento Indisponível (Materialize o Dataset Primeiro)';
+            }
         }
 
         async function initReleasePage() {
             document.getElementById('rel-title').innerText = releaseId || 'Release';
             
             try {
-                const resSt = await fetch(`/api/campaigns/${campaignId}`);
-                const st = await resSt.json();
-                const report = st.annotation_report || {};
-                videoList = Object.keys(report.per_video || {});
+                // Tenta consultar as informações da release via API se ela já existir
+                let existingReleaseInfo = null;
+                if (releaseId) {
+                    try {
+                        const resV = await fetch(`/api/releases/${releaseId}`);
+                        if (resV.ok) {
+                            existingReleaseInfo = await resV.json();
+                        }
+                    } catch (e) {
+                        console.warn('Release ainda não criada:', e);
+                    }
+                }
 
-                if (videoList.length === 0) {
-                    document.getElementById('video-assignment-list').innerHTML = '<p class="text-slate-500 text-xs">Nenhum vídeo encontrado.</p>';
+                // Se a release existir, extrai a campanha/origem vinculada a ela no arquivo de configuração
+                if (existingReleaseInfo && (existingReleaseInfo.sources || existingReleaseInfo.campaigns)) {
+                    const srcList = existingReleaseInfo.sources || existingReleaseInfo.campaigns;
+                    if (srcList.length > 0) {
+                        campaignId = srcList[0];
+                    }
+                }
+
+                // Se a URL não tiver campaignId nem conseguir derivar, busca a primeira campanha disponível
+                if (!campaignId) {
+                    const resC = await fetch('/api/campaigns');
+                    const campaigns = await resC.json();
+                    if (campaigns && campaigns.length > 0) {
+                        campaignId = campaigns[0];
+                    }
+                }
+
+                const inputRelId = document.getElementById('input-release-id');
+                if (inputRelId) inputRelId.value = releaseId || (campaignId ? `release_${campaignId}` : 'release_01');
+
+                // Verificar se a release já foi materializada previamente (manifesto ou flag materialized)
+                if (existingReleaseInfo && (existingReleaseInfo.materialized || existingReleaseInfo.build_report)) {
+                    isReleaseMaterialized = true;
+                    document.getElementById('rel-status-badge').innerText = 'Status: Materializada';
+                    enableTrainingSection();
+                } else {
+                    disableTrainingSection();
+                }
+
+                if (!campaignId) {
+                    document.getElementById('video-assignment-list').innerHTML = '<p class="text-rose-400 text-xs py-2">Identificador da origem/campanha não encontrado na URL.</p>';
                     return;
                 }
 
-                // Atribuir por padrão 80% train, 20% val
+                const resSt = await fetch(`/api/campaigns/${campaignId}`);
+                if (!resSt.ok) {
+                    throw new Error(`Falha ao carregar dados da origem: ${resSt.statusText}`);
+                }
+                const st = await resSt.json();
+                const report = st.annotation_report || {};
+                const videoDetails = st.video_details || [];
+                const notesMap = {};
+                videoDetails.forEach(v => {
+                    notesMap[v.name] = v.note || '';
+                });
+
+                videoList = Object.keys(report.per_video || {});
+                if (videoList.length === 0 && videoDetails.length > 0) {
+                    videoList = videoDetails.map(v => v.name);
+                }
+
+                if (videoList.length === 0) {
+                    document.getElementById('video-assignment-list').innerHTML = '<p class="text-amber-400 text-xs py-2">Nenhum vídeo encontrado para esta origem.</p>';
+                    return;
+                }
+
+                // Atribuir por padrão com base no comentário/nota do vídeo ou 80% train, 20% val
                 const mid = Math.ceil(videoList.length * 0.8);
                 videoList.forEach((v, idx) => {
-                    videoAssignments[v] = (idx < mid) ? 'train' : 'val';
+                    const noteStr = (notesMap[v] || '').toLowerCase().trim();
+                    if (noteStr.includes('estresse') || noteStr.includes('stress')) {
+                        videoAssignments[v] = 'test_stress';
+                    } else if (noteStr.includes('normal')) {
+                        videoAssignments[v] = 'test_normal';
+                    } else if (noteStr.includes('validação') || noteStr.includes('validacao') || noteStr.includes('val')) {
+                        videoAssignments[v] = 'val';
+                    } else if (noteStr.includes('treino') || noteStr.includes('train')) {
+                        videoAssignments[v] = 'train';
+                    } else {
+                        videoAssignments[v] = (idx < mid) ? 'train' : 'val';
+                    }
                 });
-                if (videoList.length === 1) videoAssignments[videoList[0]] = 'train';
+                if (videoList.length === 1 && !notesMap[videoList[0]]) videoAssignments[videoList[0]] = 'train';
 
                 // Renderizar tabela
                 let html = '';
                 videoList.forEach(v => {
                     const role = videoAssignments[v];
+                    const note = notesMap[v] || '';
                     html += `
-                        <div class="p-3 bg-slate-800/40 border border-slate-800 rounded-lg flex justify-between items-center text-xs">
-                            <span class="font-mono text-slate-200">${v}</span>
-                            <div class="flex gap-4">
-                                <label class="flex items-center gap-1 cursor-pointer">
+                        <div class="p-3.5 bg-slate-800/40 border border-slate-800 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                            <div class="space-y-1">
+                                <div class="font-mono text-slate-200 font-bold">${escapeHtml(v)}</div>
+                                ${note ? `<div class="text-[11px] text-amber-300/90 flex items-center gap-1 font-sans"><span>📝</span> <span>${escapeHtml(note)}</span></div>` : '<div class="text-[11px] text-slate-500 font-sans italic">Sem observações</div>'}
+                            </div>
+                            <div class="flex flex-wrap gap-2.5">
+                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-indigo-500/50">
                                     <input type="radio" name="role_${v}" value="train" ${role==='train'?'checked':''} onchange="setVideoRole('${v}', 'train')" class="text-indigo-600">
-                                    <span class="text-indigo-300 font-medium">Train</span>
+                                    <span class="text-indigo-300 font-medium">Treino (Train)</span>
                                 </label>
-                                <label class="flex items-center gap-1 cursor-pointer">
+                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-purple-500/50">
                                     <input type="radio" name="role_${v}" value="val" ${role==='val'?'checked':''} onchange="setVideoRole('${v}', 'val')" class="text-purple-600">
-                                    <span class="text-purple-300 font-medium">Val</span>
+                                    <span class="text-purple-300 font-medium">Validação (Val)</span>
+                                </label>
+                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-amber-500/50">
+                                    <input type="radio" name="role_${v}" value="test_normal" ${role==='test_normal'?'checked':''} onchange="setVideoRole('${v}', 'test_normal')" class="text-amber-600">
+                                    <span class="text-amber-300 font-medium">Teste Normal</span>
+                                </label>
+                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-rose-500/50">
+                                    <input type="radio" name="role_${v}" value="test_stress" ${role==='test_stress'?'checked':''} onchange="setVideoRole('${v}', 'test_stress')" class="text-rose-600">
+                                    <span class="text-rose-300 font-medium">Teste Estresse</span>
                                 </label>
                             </div>
                         </div>
@@ -1393,6 +1832,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 });
                 document.getElementById('video-assignment-list').innerHTML = html;
                 updateSplitPreview();
+
+                if (isReleaseMaterialized) {
+                    lockReleaseConfiguration();
+                }
 
                 // Carregar Modelos em models/
                 const resM = await fetch('/api/models');
@@ -1407,12 +1850,333 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     });
                 }
 
+                // Carregar Fila de Treinamentos
+                loadReleaseJobs();
+
             } catch (err) {
                 console.error(err);
+                document.getElementById('video-assignment-list').innerHTML = `<p class="text-rose-400 text-xs py-2">Erro ao carregar vídeos: ${escapeHtml(err.message)}</p>`;
             }
         }
 
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         initReleasePage();
+    </script>
+</body>
+</html>"""
+
+    @app.get("/training.html", response_class=HTMLResponse)
+    def training_detail_page():
+        return """<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dataset Studio - Detalhes do Treinamento</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+    </style>
+</head>
+<body class="p-6 md:p-10">
+    <div class="max-w-6xl mx-auto space-y-8">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 border-b border-slate-800 gap-4">
+            <div>
+                <div class="flex items-center gap-3">
+                    <a href="/" class="text-xs text-indigo-400 font-semibold hover:underline">&larr; Voltar para a Início</a>
+                    <span id="train-status-badge" class="px-2.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-md text-xs font-semibold">Carregando...</span>
+                </div>
+                <h1 id="train-title" class="text-3xl font-extrabold tracking-tight text-amber-400 mt-2">Treinamento</h1>
+                <p class="text-slate-400 text-sm mt-1">Métricas de treinamento, artefatos gerados e promoção de modelo</p>
+            </div>
+
+            <!-- Botão de Ação: Promover Modelo -->
+            <div id="promote-action-container" class="hidden flex items-center gap-2">
+                <button onclick="openPromoteModal()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
+                    <span>🏆</span> <span>Promover para pasta models/</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Módulos de Métricas Quantitativas e Identificação do Modelo -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-lg">
+                <div class="text-slate-400 font-medium">mAP50 (Acurácia 50%)</div>
+                <div id="stat-map50" class="text-2xl font-extrabold text-emerald-400 font-mono">--</div>
+                <div class="text-[11px] text-slate-500">Métrica principal do YOLO</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-lg">
+                <div class="text-slate-400 font-medium">mAP50-95</div>
+                <div id="stat-map5095" class="text-2xl font-extrabold text-indigo-400 font-mono">--</div>
+                <div class="text-[11px] text-slate-500">Acurácia rigorosa multi-IoU</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-lg">
+                <div class="text-slate-400 font-medium">Precisão / Precisão (P)</div>
+                <div id="stat-precision" class="text-2xl font-extrabold text-amber-400 font-mono">--</div>
+                <div class="text-[11px] text-slate-500">Taxa de falsos positivos</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-lg">
+                <div class="text-slate-400 font-medium">Revocação / Recall (R)</div>
+                <div id="stat-recall" class="text-2xl font-extrabold text-purple-400 font-mono">--</div>
+                <div class="text-[11px] text-slate-500">Taxa de detecção completa</div>
+            </div>
+        </div>
+
+        <!-- Grade de Detalhes do Modelo & Arquivos -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Coluna Principal (2 Cols): Gráficos e Imagens -->
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                    <h2 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+                        <span>📊</span> Métricas e Gráficos de Resultados
+                    </h2>
+                    <div id="train-images-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <p class="text-slate-500 text-xs italic">Carregando visualizações...</p>
+                    </div>
+                </div>
+
+                <!-- Terminal / Log do Treinamento -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-3">
+                    <h2 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+                        <span>📄</span> Log de Saída do Treinamento
+                    </h2>
+                    <pre id="train-logs-box" class="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 h-80 overflow-y-auto">Carregando logs...</pre>
+                </div>
+            </div>
+
+            <!-- Coluna Lateral: Especificações do Modelo e Dataset -->
+            <div class="space-y-6">
+                <!-- Informações do Modelo & Dataset -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                    <h2 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+                        <span>ℹ️</span> Identificação e Origem
+                    </h2>
+                    <div class="space-y-3 text-xs">
+                        <div>
+                            <div class="text-slate-400 font-medium">Modelo Base Inicial</div>
+                            <div id="info-base-model" class="font-mono font-bold text-amber-300 mt-0.5">--</div>
+                        </div>
+                        <div>
+                            <div class="text-slate-400 font-medium">Dataset / Release Materializado</div>
+                            <div id="info-release-id" class="font-mono font-bold text-emerald-400 mt-0.5">--</div>
+                        </div>
+                        <div>
+                            <div class="text-slate-400 font-medium">Origens de Dados</div>
+                            <div id="info-sources" class="font-mono text-slate-200 mt-0.5">--</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800">
+                            <div>
+                                <div class="text-slate-400 font-medium">Épocas Treinadas</div>
+                                <div id="info-epochs" class="font-mono font-bold text-slate-200 mt-0.5">--</div>
+                            </div>
+                            <div>
+                                <div class="text-slate-400 font-medium">Resolução (imgsz)</div>
+                                <div id="info-imgsz" class="font-mono font-bold text-slate-200 mt-0.5">--</div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800">
+                            <div>
+                                <div class="text-slate-400 font-medium">Total de Imagens</div>
+                                <div id="info-total-images" class="font-mono font-bold text-slate-200 mt-0.5">--</div>
+                            </div>
+                            <div>
+                                <div class="text-slate-400 font-medium">Total de Marcações</div>
+                                <div id="info-total-boxes" class="font-mono font-bold text-slate-200 mt-0.5">--</div>
+                            </div>
+                        </div>
+                        <div class="pt-1 border-t border-slate-800">
+                            <div class="text-slate-400 font-medium">Tempo de Execução</div>
+                            <div id="info-duration" class="font-mono font-bold text-indigo-300 mt-0.5">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                    <h2 class="text-lg font-bold text-slate-200 flex items-center gap-2">
+                        <span>📦</span> Artefatos e Pesos (.pt)
+                    </h2>
+                    <div class="space-y-3 text-xs">
+                        <div class="p-3 bg-slate-800/40 border border-slate-800 rounded-xl flex items-center justify-between">
+                            <div>
+                                <div class="font-bold text-emerald-400">best.pt</div>
+                                <div class="text-[11px] text-slate-400">Melhores pesos de validação</div>
+                            </div>
+                            <span id="badge-best-status" class="px-2 py-0.5 bg-slate-800 text-slate-400 rounded border border-slate-700">Verificando...</span>
+                        </div>
+                        <div class="p-3 bg-slate-800/40 border border-slate-800 rounded-xl flex items-center justify-between">
+                            <div>
+                                <div class="font-bold text-indigo-400">last.pt</div>
+                                <div class="text-[11px] text-slate-400">Pesos da última época</div>
+                            </div>
+                            <span id="badge-last-status" class="px-2 py-0.5 bg-slate-800 text-slate-400 rounded border border-slate-700">Verificando...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Promoção de Modelo -->
+    <div id="promote-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div>
+                <h3 class="text-lg font-bold text-emerald-400">🏆 Promover Modelo para models/</h3>
+                <p class="text-xs text-slate-400 mt-1">Copie o arquivo <code class="text-emerald-300 font-mono">best.pt</code> deste treinamento para o diretório de modelos do workspace para usá-lo em novas predições.</p>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-xs font-semibold text-slate-300">Nome do Modelo em models/</label>
+                <input type="text" id="input-promote-name" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+            </div>
+
+            <div id="promote-error" class="hidden text-rose-400 text-xs font-medium"></div>
+
+            <div class="flex justify-end gap-3 pt-2">
+                <button onclick="closePromoteModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-lg transition">Cancelar</button>
+                <button onclick="executePromote()" id="btn-confirm-promote" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition shadow-lg shadow-emerald-600/30">Promover Modelo</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const trainingId = urlParams.get('id');
+
+        async function initTrainingPage() {
+            if (!trainingId) {
+                alert('ID de treinamento não informado!');
+                window.location.href = '/';
+                return;
+            }
+
+            document.getElementById('train-title').innerText = trainingId;
+            document.getElementById('input-promote-name').value = `${trainingId}_best.pt`;
+
+            try {
+                const res = await fetch(`/api/trainings/${encodeURIComponent(trainingId)}`);
+                if (!res.ok) throw new Error('Treinamento não encontrado.');
+                const data = await res.json();
+
+                // Status
+                const statusBadge = document.getElementById('train-status-badge');
+                if (data.status === 'completed') {
+                    statusBadge.innerText = 'Status: Concluído';
+                    statusBadge.className = 'px-2.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-xs font-semibold';
+                } else {
+                    statusBadge.innerText = `Status: ${data.status}`;
+                }
+
+                // Preenchimento das Métricas Numéricas Quantitativas
+                const m = data.metrics || {};
+                document.getElementById('stat-map50').innerText = m.map50 !== null ? `${(m.map50 * 100).toFixed(1)}%` : '--';
+                document.getElementById('stat-map5095').innerText = m.map50_95 !== null ? `${(m.map50_95 * 100).toFixed(1)}%` : '--';
+                document.getElementById('stat-precision').innerText = m.precision !== null ? `${(m.precision * 100).toFixed(1)}%` : '--';
+                document.getElementById('stat-recall').innerText = m.recall !== null ? `${(m.recall * 100).toFixed(1)}%` : '--';
+
+                // Preenchimento dos Dados do Modelo e Release
+                const args = data.args || {};
+                const rel = data.release || {};
+                const buildRep = rel.build_report || {};
+
+                document.getElementById('info-base-model').innerText = args.model || 'yolo26n.pt';
+                document.getElementById('info-release-id').innerText = rel.release_id || trainingId;
+                document.getElementById('info-sources').innerText = (rel.sources || []).join(', ') || 'N/A';
+                document.getElementById('info-epochs').innerText = `${m.completed_epochs || 0} / ${args.epochs || '--'}`;
+                document.getElementById('info-imgsz').innerText = `${args.imgsz || '--'} px`;
+
+                document.getElementById('info-total-images').innerText = buildRep.images !== undefined ? buildRep.images : '--';
+                document.getElementById('info-total-boxes').innerText = buildRep.boxes !== undefined ? buildRep.boxes : '--';
+
+                // Formatação do tempo de execução
+                if (data.duration_seconds !== null && data.duration_seconds !== undefined) {
+                    const sec = data.duration_seconds;
+                    const mins = Math.floor(sec / 60);
+                    const secs = sec % 60;
+                    document.getElementById('info-duration').innerText = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                } else {
+                    document.getElementById('info-duration').innerText = '--';
+                }
+
+                // Pesos
+                document.getElementById('badge-best-status').innerText = data.has_best ? 'Disponível' : 'Ausente';
+                document.getElementById('badge-best-status').className = data.has_best ? 'px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[11px] font-semibold' : 'px-2 py-0.5 bg-slate-800 text-slate-500 rounded text-[11px]';
+
+                document.getElementById('badge-last-status').innerText = data.has_last ? 'Disponível' : 'Ausente';
+                document.getElementById('badge-last-status').className = data.has_last ? 'px-2 py-0.5 bg-indigo-500/20 text-indigo-400 rounded text-[11px] font-semibold' : 'px-2 py-0.5 bg-slate-800 text-slate-500 rounded text-[11px]';
+
+                // Liberar botão de promoção se tiver best.pt
+                if (data.has_best) {
+                    document.getElementById('promote-action-container').classList.remove('hidden');
+                }
+
+                // Logs
+                const logBox = document.getElementById('train-logs-box');
+                logBox.innerText = data.log || 'Nenhum log gravado.';
+                logBox.scrollTop = logBox.scrollHeight;
+
+                // Imagens de Gráficos e Validação
+                const imgContainer = document.getElementById('train-images-container');
+                if (!data.images || data.images.length === 0) {
+                    imgContainer.innerHTML = '<p class="text-slate-500 text-xs italic col-span-2">Nenhum gráfico gerado ainda.</p>';
+                } else {
+                    imgContainer.innerHTML = data.images.map(img => `
+                        <div class="bg-slate-950 p-2 border border-slate-800 rounded-xl space-y-1">
+                            <div class="text-[11px] font-mono text-slate-400 truncate" title="${escapeHtml(img)}">${escapeHtml(img)}</div>
+                            <img src="/runs/detect/${encodeURIComponent(trainingId)}/${encodeURIComponent(img)}" class="w-full h-auto rounded-lg object-contain bg-slate-900 border border-slate-800">
+                        </div>
+                    `).join('');
+                }
+
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function openPromoteModal() {
+            document.getElementById('promote-modal').classList.remove('hidden');
+            document.getElementById('promote-modal').classList.add('flex');
+        }
+
+        function closePromoteModal() {
+            document.getElementById('promote-modal').classList.add('hidden');
+            document.getElementById('promote-modal').classList.remove('flex');
+        }
+
+        async function executePromote() {
+            const name = document.getElementById('input-promote-name').value.trim();
+            const errDiv = document.getElementById('promote-error');
+            errDiv.classList.add('hidden');
+
+            try {
+                const res = await fetch(`/api/trainings/${encodeURIComponent(trainingId)}/promote`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target_name: name })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao promover modelo.');
+                alert(data.message || 'Modelo promovido com sucesso!');
+                closePromoteModal();
+            } catch (err) {
+                errDiv.innerText = err.message;
+                errDiv.classList.remove('hidden');
+            }
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        initTrainingPage();
     </script>
 </body>
 </html>"""
@@ -1441,15 +2205,165 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         for path in sorted(runs_dir.iterdir(), reverse=True):
             if path.is_dir():
                 best = path / "weights" / "best.pt"
+                args_yaml = path / "args.yaml"
+                model_name = "YOLO"
+                if args_yaml.exists():
+                    try:
+                        args = load_yaml(args_yaml)
+                        model_name = args.get("model", "YOLO")
+                    except Exception:
+                        pass
                 items.append(
                     {
                         "name": path.name,
                         "status": "completed" if best.is_file() else "in_progress",
-                        "model": "YOLO",
+                        "model": model_name,
                         "best": str(best) if best.is_file() else None,
                     }
                 )
         return items
+
+    @app.delete("/api/trainings/{training_id}")
+    def api_delete_training(training_id: str):
+        runs_dir = workspace.root / "runs" / "detect" / training_id
+        if not runs_dir.exists():
+            raise HTTPException(status_code=404, detail="Treinamento não encontrado no disco.")
+        shutil.rmtree(runs_dir, ignore_errors=False)
+        return {"status": "ok", "message": f"Treinamento {training_id} excluído com sucesso."}
+
+    @app.get("/api/trainings/{training_id}")
+    def api_training_detail(training_id: str):
+        runs_dir = workspace.root / "runs" / "detect" / training_id
+        if not runs_dir.exists():
+            raise HTTPException(status_code=404, detail="Treinamento não encontrado.")
+
+        best_path = runs_dir / "weights" / "best.pt"
+        last_path = runs_dir / "weights" / "last.pt"
+        log_path = runs_dir / "train.log"
+        csv_path = runs_dir / "results.csv"
+        args_yaml = runs_dir / "args.yaml"
+
+        log_content = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+
+        # Parser dos hiperparâmetros de entrada (args.yaml)
+        training_args = {}
+        if args_yaml.exists():
+            try:
+                training_args = load_yaml(args_yaml)
+            except Exception:
+                pass
+
+        # Parser do relatório da release associada
+        release_info = {}
+        try:
+            rel_status = version_status(workspace, training_id)
+            release_info = {
+                "release_id": rel_status["release_id"],
+                "sources": rel_status.get("sources", []),
+                "assignments": rel_status.get("assignments", {}),
+                "build_report": rel_status.get("build_report") or {},
+            }
+        except Exception:
+            pass
+
+        # Parser do CSV de resultados do YOLO (results.csv)
+        metrics = {
+            "completed_epochs": 0,
+            "precision": None,
+            "recall": None,
+            "map50": None,
+            "map50_95": None,
+            "val_box_loss": None,
+            "val_cls_loss": None,
+            "val_dfl_loss": None,
+        }
+        if csv_path.exists():
+            try:
+                lines = csv_path.read_text(encoding="utf-8").strip().splitlines()
+                if len(lines) > 1:
+                    headers = [h.strip() for h in lines[0].split(",")]
+                    last_line = [v.strip() for v in lines[-1].split(",")]
+                    row = dict(zip(headers, last_line))
+
+                    metrics["completed_epochs"] = int(row.get("epoch", len(lines) - 1))
+                    
+                    # Tenta ler métricas padrão da Ultralytics
+                    for k, v in row.items():
+                        lk = k.lower()
+                        if "precision" in lk:
+                            metrics["precision"] = float(v)
+                        elif "recall" in lk:
+                            metrics["recall"] = float(v)
+                        elif "map50-95" in lk or "map95" in lk:
+                            metrics["map50_95"] = float(v)
+                        elif "map50" in lk:
+                            metrics["map50"] = float(v)
+                        elif "val/box_loss" in lk:
+                            metrics["val_box_loss"] = float(v)
+                        elif "val/cls_loss" in lk:
+                            metrics["val_cls_loss"] = float(v)
+                        elif "val/dfl_loss" in lk:
+                            metrics["val_dfl_loss"] = float(v)
+            except Exception as e:
+                console.error("Erro ao ler results.csv:", e)
+
+        # Cálculo do tempo de execução baseado nos logs/arquivos
+        duration_seconds = None
+        if log_path.exists():
+            try:
+                stat_start = log_path.stat().st_ctime
+                stat_end = (best_path if best_path.exists() else log_path).stat().st_mtime
+                duration_seconds = max(0, int(stat_end - stat_start))
+            except Exception:
+                pass
+
+        # Lista imagens de gráficos e validação disponíveis
+        image_files = []
+        for img in sorted(runs_dir.glob("*.png")):
+            image_files.append(img.name)
+
+        return {
+            "id": training_id,
+            "name": training_id,
+            "status": "completed" if best_path.is_file() else "in_progress",
+            "has_best": best_path.is_file(),
+            "has_last": last_path.is_file(),
+            "best_path": str(best_path) if best_path.is_file() else None,
+            "last_path": str(last_path) if last_path.is_file() else None,
+            "args": training_args,
+            "release": release_info,
+            "metrics": metrics,
+            "duration_seconds": duration_seconds,
+            "log": log_content[-20000:],
+            "images": image_files,
+        }
+
+    class PromoteModelReq(BaseModel):
+        target_name: str | None = None
+
+    @app.post("/api/trainings/{training_id}/promote")
+    def api_promote_model(training_id: str, req: PromoteModelReq = Body(default_factory=PromoteModelReq)):
+        runs_dir = workspace.root / "runs" / "detect" / training_id
+        best_path = runs_dir / "weights" / "best.pt"
+        if not best_path.is_file():
+            raise HTTPException(status_code=400, detail="Este treinamento não possui o modelo 'best.pt' finalizado para promover.")
+
+        target_name = (req.target_name or f"{training_id}_best.pt").strip()
+        if not target_name.endswith(".pt"):
+            target_name += ".pt"
+
+        dest_dir = workspace.models_root
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / target_name
+
+        shutil.copy2(best_path, dest_path)
+        rel_dest = dest_path.relative_to(workspace.root).as_posix()
+        return {
+            "status": "ok",
+            "message": f"Modelo promovido com sucesso para '{rel_dest}'!",
+            "promoted_name": target_name,
+            "path": rel_dest,
+        }
 
     @app.get("/api/sources")
     @app.get("/api/campaigns")
@@ -1466,6 +2380,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 videos_dir=Path(req.videos_dir),
                 video_pattern=req.video_pattern,
                 video_files=req.video_files or None,
+                video_notes=req.video_notes or None,
                 annotation={"classes": req.classes},
             )
             return {"status": "ok", "path": str(path)}
@@ -1478,6 +2393,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         source_id: str = Form(None),
         campaign_id: str = Form(None),
         classes: str = Form('["objeto"]'),
+        video_notes: str = Form("{}"),
         videos: list[UploadFile] = File(...),
     ):
         try:
@@ -1485,6 +2401,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             if not target_id:
                 raise HTTPException(status_code=400, detail="Identificador da origem obrigatório.")
             class_list = json.loads(classes)
+            notes_dict = json.loads(video_notes) if video_notes else {}
             videos_dir = workspace.videos_root
             videos_dir.mkdir(parents=True, exist_ok=True)
             video_filenames = []
@@ -1499,6 +2416,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 videos_dir=videos_dir,
                 video_pattern="*.mp4",
                 video_files=video_filenames,
+                video_notes=notes_dict,
                 annotation={"classes": class_list},
             )
             return {"status": "ok", "path": str(path)}
@@ -1640,10 +2558,29 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         except WorkflowError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    @app.delete("/api/sources/{source_id}")
+    @app.delete("/api/campaigns/{source_id}")
+    def api_delete_source(source_id: str):
+        try:
+            delete_source(workspace, source_id)
+            return {"status": "ok", "message": f"Origem {source_id} excluída com sucesso."}
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.delete("/api/versions/{version_id}")
+    @app.delete("/api/releases/{version_id}")
+    def api_delete_version(version_id: str):
+        try:
+            delete_version(workspace, version_id)
+            return {"status": "ok", "message": f"Release {version_id} excluída com sucesso."}
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     @app.post("/api/versions/{version_id}/start-train")
     @app.post("/api/releases/{version_id}/start-train")
     def api_start_train(version_id: str, req: TrainStartReq):
         try:
+            train_timestamp_id = f"t_{datetime.now().strftime('%y%m%d%H%M')}"
             params = TrainingParams(
                 model=req.model,
                 epochs=req.epochs,
@@ -1655,15 +2592,21 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 lr0=req.lr0,
                 optimizer=req.optimizer,
                 project=str(workspace.root / "runs" / "detect"),
-                name=version_id,
+                name=train_timestamp_id,
             )
             recipe = training_recipe(workspace, version_id, params)
-            job = job_manager.start(
+            job = job_manager.enqueue_training(
                 command=recipe["command"],
-                kind="training",
                 target=version_id,
                 cwd=workspace.root,
-                log_path=workspace.root / "runs" / "detect" / version_id / "train.log",
+                log_path=workspace.root / "runs" / "detect" / train_timestamp_id / "train.log",
+                metadata={
+                    "training_id": train_timestamp_id,
+                    "release_id": version_id,
+                    "model": req.model,
+                    "epochs": req.epochs,
+                    "imgsz": req.imgsz,
+                },
             )
             return job
         except WorkflowError as exc:
@@ -1686,6 +2629,17 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             return job_manager.stop(job_id)
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def api_cancel_job(job_id: str):
+        try:
+            return job_manager.cancel_queued(job_id)
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    runs_dir = workspace.root / "runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/runs", StaticFiles(directory=runs_dir), name="runs")
 
     return app
 
