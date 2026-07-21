@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
-import hashlib
 import os
 import urllib.request
 from pathlib import Path
@@ -14,7 +12,6 @@ import cv2
 import numpy as np
 import yaml
 
-from dataset_studio.adapters.ultralytics.predictor import UltralyticsPredictor
 from dataset_studio.domain.workspace import label_studio_region_id
 from dataset_studio.ports.predictor import Detection, Predictor
 

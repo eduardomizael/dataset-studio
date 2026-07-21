@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 import socket
 from pathlib import Path
+from typing import Any
+
+from dataset_studio.domain import WorkflowError, load_source, load_yaml
 
 
 def get_local_ip() -> str:
@@ -55,6 +58,26 @@ def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 10.0) -> 
     while time.monotonic() - start < timeout:
         if is_port_open(port, host=host):
             return True
+        time.sleep(0.2)
+    return False
+
+
+def wait_for_ml_backend(port: int = 9090, timeout: float = 10.0) -> bool:
+    """Confirma que a porta pertence a um backend saudável do Dataset Studio."""
+    import json
+    import time
+    import urllib.request
+
+    deadline = time.monotonic() + timeout
+    url = f"http://127.0.0.1:{port}/health"
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1.0) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if payload.get("status") == "UP" and payload.get("model_version"):
+                return True
+        except Exception:
+            pass
         time.sleep(0.2)
     return False
 
@@ -139,33 +162,75 @@ def start_ml_backend_job(
         if job["target"] == "ml-backend" and job["status"] == "running":
             return {"status": "running", "port": port, "job_id": job["id"]}
 
-    model_path = ""
-    if model_name:
-        resolved = ws.resolve_path(model_name)
-        if resolved.exists():
-            model_path = str(resolved.resolve())
+    source = load_source(ws, campaign_id)
+    annotation = source.get("annotation", {})
+    configured_model = model_name or annotation.get("model")
+    if not configured_model:
+        raise WorkflowError("Selecione um modelo para iniciar o backend de predicao.")
+    resolved = ws.resolve_path(configured_model).resolve()
+    try:
+        resolved.relative_to(ws.models_root.resolve())
+    except ValueError as exc:
+        raise WorkflowError("O modelo do backend deve estar dentro de models/.") from exc
+    if not resolved.is_file():
+        raise WorkflowError(f"Modelo do backend nao encontrado: {resolved}")
+
+    detection: dict[str, Any] = {}
+    roi_points: list[list[int]] = []
+    detection_config = annotation.get("detection_config")
+    if detection_config:
+        config_payload = load_yaml(ws.resolve_path(detection_config))
+        detection = dict(config_payload.get("detection") or {})
+        roi = dict(config_payload.get("roi") or {})
+        if roi.get("enabled") and isinstance(roi.get("points"), list):
+            roi_points = roi["points"]
+
+    env = build_label_studio_env(ws.root)
+    import json
+    env.update(
+        {
+            "DATASET_STUDIO_ML_MODEL": str(resolved),
+            "DATASET_STUDIO_ML_CLASSES": json.dumps(annotation.get("classes") or ["objeto"]),
+            "DATASET_STUDIO_ML_ROOT": str(ws.root),
+            "DATASET_STUDIO_ML_CONF": str(detection.get("conf_threshold", 0.25)),
+            "DATASET_STUDIO_ML_DEVICE": str(detection.get("device") or ""),
+            "DATASET_STUDIO_ML_OPTIONS": json.dumps(
+                {
+                    key: value
+                    for key, value in {
+                        "imgsz": detection.get("img_size"),
+                        "iou": detection.get("iou_threshold"),
+                        "max_det": detection.get("max_det"),
+                        "half": detection.get("half_precision"),
+                    }.items()
+                    if value is not None
+                }
+            ),
+            "DATASET_STUDIO_ML_ROI": json.dumps(roi_points),
+        }
+    )
 
     script = f"""
-import sys
+import json
+import os
 import uvicorn
+from pathlib import Path
 from dataset_studio.adapters.label_studio.ml_backend import create_app, GenericLabelStudioBackend
+from dataset_studio.adapters.ultralytics.predictor import UltralyticsPredictor
 
-class DummyPredictor:
-    @property
-    def model_version(self): return "mock-v1"
-    def predict(self, img): return []
-
-model_path = "{model_path}"
-if model_path:
-    try:
-        from dataset_studio.adapters.ultralytics.predictor import UltralyticsPredictor
-        predictor = UltralyticsPredictor(model_path)
-    except Exception:
-        predictor = DummyPredictor()
-else:
-    predictor = DummyPredictor()
-
-backend = GenericLabelStudioBackend(predictor=predictor)
+predictor = UltralyticsPredictor(
+    os.environ["DATASET_STUDIO_ML_MODEL"],
+    conf=float(os.environ["DATASET_STUDIO_ML_CONF"]),
+    device=os.environ.get("DATASET_STUDIO_ML_DEVICE") or None,
+    inference_options=json.loads(os.environ["DATASET_STUDIO_ML_OPTIONS"]),
+    roi_points=json.loads(os.environ["DATASET_STUDIO_ML_ROI"]),
+)
+predictor.load()
+backend = GenericLabelStudioBackend(
+    predictor=predictor,
+    class_names=json.loads(os.environ["DATASET_STUDIO_ML_CLASSES"]),
+    default_root=Path(os.environ["DATASET_STUDIO_ML_ROOT"]),
+)
 app = create_app(backend)
 
 uvicorn.run(app, host="127.0.0.1", port={port}, log_level="warning")
@@ -176,5 +241,6 @@ uvicorn.run(app, host="127.0.0.1", port={port}, log_level="warning")
         kind="ml-backend",
         target="ml-backend",
         cwd=ws.campaign_root(campaign_id),
+        env=env,
     )
     return job

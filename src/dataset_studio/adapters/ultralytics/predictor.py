@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Any
 import numpy as np
+import cv2
 
 from dataset_studio.ports.predictor import Detection, Predictor
 
@@ -17,10 +19,14 @@ class UltralyticsPredictor(Predictor):
         model_path: str | Path,
         conf: float = 0.25,
         device: str | None = None,
+        inference_options: dict[str, Any] | None = None,
+        roi_points: list[list[int]] | None = None,
     ) -> None:
         self.path = Path(model_path).resolve()
         self.conf = conf
         self.device = device
+        self.inference_options = dict(inference_options or {})
+        self.roi_points = roi_points or []
         self._model = None
         self._version = self._build_version()
 
@@ -47,10 +53,15 @@ class UltralyticsPredictor(Predictor):
     def predict(self, image: np.ndarray) -> list[Detection]:
         """Executa a inferência YOLO na imagem fornecida e converte os resultados."""
         self.load()
-        kwargs = {"conf": self.conf, "verbose": False}
+        inference_image = image
+        if self.roi_points:
+            mask = np.zeros(image.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(mask, [np.asarray(self.roi_points, dtype=np.int32)], 255)
+            inference_image = cv2.bitwise_and(image, image, mask=mask)
+        kwargs = {"conf": self.conf, "verbose": False, **self.inference_options}
         if self.device:
             kwargs["device"] = self.device
-        results = self._model(image, **kwargs)
+        results = self._model(inference_image, **kwargs)
         detections: list[Detection] = []
         if results and len(results) > 0:
             for box in results[0].boxes:

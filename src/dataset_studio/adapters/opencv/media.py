@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -11,7 +9,7 @@ from typing import Any
 import cv2
 
 from dataset_studio.adapters.ultralytics.predictor import UltralyticsPredictor
-from dataset_studio.domain import Workspace, frame_manifest_path, load_campaign
+from dataset_studio.domain import WorkflowError, Workspace, frame_manifest_path, load_source, sha256
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -203,39 +201,147 @@ def run_uniform_mode(
     return {"saved": saved, "analyzed": analyzed}
 
 
+def _formatted_detections(predictor: UltralyticsPredictor, frame) -> list[tuple[int, tuple]]:
+    height, width = frame.shape[:2]
+    return [
+        (item.class_id, xyxy_to_yolo(item.bbox_xyxy, width, height))
+        for item in predictor.predict(frame)
+    ]
+
+
+def run_smart_mode(
+    video_path: Path,
+    predictor: UltralyticsPredictor,
+    *,
+    scan_step: int,
+    dense_step: int,
+    sparse_step: int,
+    margin: int,
+    max_negatives_per_video: int,
+    images_out: Path,
+    records: list[dict],
+) -> dict[str, int]:
+    """Extrai mais frames nas regiões com objetos e negativos esparsos fora delas."""
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return {"fish": 0, "negative": 0, "analyzed": 0}
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+
+    detected_frames = scan_video(video_path, predictor, scan_step)
+    detected_ranges = find_fish_ranges(detected_frames, margin, total_frames)
+    cap = cv2.VideoCapture(str(video_path))
+    frame_idx = 0
+    negative_count = 0
+    stats = {"fish": 0, "negative": 0, "analyzed": 0}
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        in_detection_range = is_in_ranges(frame_idx, detected_ranges)
+        should_extract = (
+            in_detection_range and frame_idx % dense_step == 0
+        ) or (
+            not in_detection_range
+            and frame_idx % sparse_step == 0
+            and negative_count < max_negatives_per_video
+        )
+        if should_extract:
+            detections = _formatted_detections(predictor, frame)
+            frame_name = f"{video_path.stem}_f{frame_idx:06d}"
+            save_frame(frame, detections, frame_name, images_out, None)
+            records.append(
+                prediction_record(
+                    frame_name=frame_name,
+                    source_video=video_path.name,
+                    frame_index=frame_idx,
+                    frame=frame,
+                    detections=detections,
+                )
+            )
+            stats["analyzed"] += 1
+            if detections:
+                stats["fish"] += 1
+            else:
+                stats["negative"] += 1
+                negative_count += 1
+        frame_idx += 1
+    cap.release()
+    return stats
+
+
 def extract_source_frames(
     defaults_or_ws: dict[str, Any] | Workspace,
-    campaign_id: str,
+    source_id: str,
     *,
     weights_path: Path | None = None,
 ) -> dict[str, Any]:
     """Executa o pipeline de extração de frames (Uniforme ou Inteligente com YOLO) para uma fonte de dados."""
 
-    source = ws.source_root(source_id)
+    ws = (
+        defaults_or_ws
+        if isinstance(defaults_or_ws, Workspace)
+        else Workspace.from_path(Path(defaults_or_ws["paths"]["sources_root"]).resolve().parent.parent)
+    )
     manifest_path = frame_manifest_path(ws, source_id)
     root = ws.source_root(source_id)
     images_out = root / "frames" / "raw" / "images"
     images_out.mkdir(parents=True, exist_ok=True)
-    from dataset_studio.domain.sources import load_source
     source_data = load_source(ws, source_id)
+    extraction = source_data["extraction"]
+    mode = extraction.get("mode", "uniform")
     videos_dir = ws.resolve_path(source_data["videos"]["directory"])
     records: list[dict] = []
+
+    predictor = None
+    model_path = weights_path
+    if mode == "smart":
+        model_path = model_path or ws.resolve_path(extraction["model"])
+        predictor = UltralyticsPredictor(
+            model_path,
+            conf=float(extraction.get("confidence", extraction.get("confidence_threshold", 0.25))),
+            device=extraction.get("device"),
+        )
+        try:
+            predictor.load()
+        except ImportError as exc:
+            raise WorkflowError(
+                "Ultralytics nao esta instalado. Execute: uv sync --all-extras"
+            ) from exc
 
     for v_file in source_data["videos"]["files"]:
         video_path = videos_dir / v_file["name"]
         if video_path.is_file():
-            run_uniform_mode(video_path, frame_step, images_out, None, records)
+            if mode == "smart":
+                assert predictor is not None
+                run_smart_mode(
+                    video_path,
+                    predictor,
+                    scan_step=int(extraction.get("scan_step", 15)),
+                    dense_step=int(extraction.get("dense_step", 30)),
+                    sparse_step=int(extraction.get("sparse_step", 90)),
+                    margin=int(extraction.get("margin", 45)),
+                    max_negatives_per_video=int(extraction.get("max_negatives_per_video", 15)),
+                    images_out=images_out,
+                    records=records,
+                )
+            else:
+                frame_step = int(
+                    extraction.get("uniform_frame_step", extraction.get("frame_step", 30))
+                )
+                run_uniform_mode(video_path, frame_step, images_out, None, records)
 
     records_by_id = {str(item["frame_id"]): item for item in records}
     payload = {
         "schema_version": 1,
-        "model": None,
-        "model_sha256": None,
-        "confidence": None,
-        "mode": "uniform",
+        "model": str(extraction.get("model")) if extraction.get("model") else None,
+        "model_sha256": sha256(model_path) if model_path and model_path.is_file() else None,
+        "confidence": extraction.get("confidence", extraction.get("confidence_threshold")),
+        "mode": mode,
         "video_pattern": source_data["videos"].get("pattern"),
         "video_files": [f["name"] for f in source_data["videos"]["files"]],
-        "frame_step": frame_step,
+        "frame_step": extraction.get("uniform_frame_step", extraction.get("frame_step")),
         "frames": [records_by_id[key] for key in sorted(records_by_id)],
     }
     manifest_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -243,4 +349,49 @@ def extract_source_frames(
 
 
 extract_campaign_frames = extract_source_frames
+
+
+def preannotate_source_frames(
+    ws: Workspace,
+    source_id: str,
+    model_path: Path,
+    *,
+    confidence: float = 0.25,
+    device: str | None = None,
+) -> Path:
+    """Gera sugestões para todos os frames antes da fixação do import_tasks.json."""
+    manifest_path = frame_manifest_path(ws, source_id)
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Manifesto de frames nao encontrado: {manifest_path}")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    predictor = UltralyticsPredictor(model_path, conf=confidence, device=device)
+    try:
+        predictor.load()
+    except ImportError as exc:
+        raise WorkflowError(
+            "Ultralytics nao esta instalado. Execute: uv sync --all-extras"
+        ) from exc
+    images_root = ws.source_root(source_id) / "frames" / "raw" / "images"
+    for frame_record in payload.get("frames", []):
+        image = cv2.imread(str(images_root / frame_record["image"]))
+        if image is None:
+            raise FileNotFoundError(f"Frame nao encontrado: {frame_record['image']}")
+        detections = _formatted_detections(predictor, image)
+        frame_record["predictions"] = [
+            {
+                "class_id": class_id,
+                "xc": round(float(box[0]), 6),
+                "yc": round(float(box[1]), 6),
+                "width": round(float(box[2]), 6),
+                "height": round(float(box[3]), 6),
+            }
+            for class_id, box in detections
+        ]
+    payload["model"] = str(model_path)
+    payload["model_sha256"] = sha256(model_path)
+    payload["confidence"] = confidence
+    temporary = manifest_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(manifest_path)
+    return manifest_path
 

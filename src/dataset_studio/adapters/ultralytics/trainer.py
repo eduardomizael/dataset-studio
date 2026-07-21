@@ -14,15 +14,12 @@ class UltralyticsCommandTrainer(Trainer):
     def build_command(self, data_yaml_path: Path, params: TrainingParams) -> list[str]:
         """Constrói a lista de comandos CLI para o subprocesso do Ultralytics YOLO."""
 
-        fish_venv_yolo = Path(r"C:\Users\eduar\Desktop\fish_detection\.venv\Scripts\yolo.exe")
-        if fish_venv_yolo.is_file():
-            cmd = [str(fish_venv_yolo)]
-        else:
-            python_exec = sys.executable
-            fish_venv_python = Path(r"C:\Users\eduar\Desktop\fish_detection\.venv\Scripts\python.exe")
-            if fish_venv_python.is_file():
-                python_exec = str(fish_venv_python)
-            cmd = [python_exec, "-u", "-c", "import sys, ultralytics.cfg; sys.argv=['yolo', *sys.argv[1:]]; ultralytics.cfg.entrypoint()"]
+        cmd = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import sys, ultralytics.cfg; sys.argv=['yolo', *sys.argv[1:]]; ultralytics.cfg.entrypoint()",
+        ]
 
         device_val = params.device
         if device_val == "auto":
