@@ -59,6 +59,27 @@ def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 10.0) -> 
     return False
 
 
+def find_label_studio_executable() -> str | None:
+    """Localiza o executável do Label Studio no ambiente Python atual ou no PATH."""
+    import shutil
+    import sys
+
+    # 1. Procura no diretório do interpretador Python ativo (ex: .venv/Scripts/ no Windows ou .venv/bin/ no Linux)
+    env_dir = Path(sys.executable).parent
+    for candidate in ["label-studio.exe", "label-studio", "label-studio.cmd", "label-studio.bat"]:
+        target = env_dir / candidate
+        if target.is_file():
+            return str(target)
+
+    # 2. Busca via shutil.which no PATH do sistema
+    for candidate in ["label-studio.exe", "label-studio"]:
+        found = shutil.which(candidate)
+        if found:
+            return found
+
+    return None
+
+
 def start_label_studio_job(
     job_manager: Any,
     ws: Any,
@@ -66,9 +87,6 @@ def start_label_studio_job(
     port: int = 8080,
 ) -> dict[str, Any]:
     """Inicia o processo local do Label Studio em segundo plano via JobManager."""
-
-    import shutil
-    import sys
 
     # Se a porta já estiver aberta, não precisa reacender o serviço
     if is_port_open(port):
@@ -80,47 +98,25 @@ def start_label_studio_job(
 
     images_dir = ws.campaign_root(campaign_id) / "frames" / "raw" / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
-    env = build_label_studio_env(images_dir)
+    doc_root = getattr(ws, "root", images_dir)
+    env = build_label_studio_env(doc_root)
 
-    has_ls = shutil.which("label-studio") is not None
-    if has_ls:
-        cmd = ["label-studio", "start", "--port", str(port)]
-    else:
-        fallback_script = f"""
-import http.server
-import socketserver
+    ls_exec = find_label_studio_executable()
+    if ls_exec is None:
+        from dataset_studio.domain import WorkflowError
+        raise WorkflowError(
+            "O executável do Label Studio não foi encontrado no ambiente Python atual. "
+            "Certifique-se de instalar o pacote executando 'pip install label-studio' ou 'uv pip install label-studio'."
+        )
 
-PORT = {port}
-HTML = '''<!DOCTYPE html>
-<html lang="pt-BR" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <title>Label Studio - Dataset Studio</title>
-    <style>body {{ background:#0f172a; color:#f8fafc; font-family:sans-serif; padding:40px; text-align:center; }}</style>
-</head>
-<body>
-    <h1 style="color:#818cf8;">🚀 Servidor Label Studio Ativo</h1>
-    <p style="color:#94a3b8;">Servidor auxiliar rodando na porta {port}.</p>
-</body>
-</html>'''
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(HTML.encode("utf-8"))
-
-with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
-    httpd.serve_forever()
-"""
-        cmd = [sys.executable, "-c", fallback_script]
+    cmd = [ls_exec, "start", "--port", str(port), "--no-browser"]
 
     job = job_manager.start(
         cmd,
         kind="label-studio",
         target="label-studio",
         cwd=ws.campaign_root(campaign_id),
+        env=env,
     )
     return job
 
