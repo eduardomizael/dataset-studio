@@ -24,7 +24,107 @@ class JobManager:
 
     def __init__(self) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
+        self._queue: list[dict[str, Any]] = []
+        self._active_training_job_id: str | None = None
         self._lock = threading.Lock()
+
+    def enqueue_training(
+        self,
+        command: list[str],
+        *,
+        target: str,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        log_path: Path | None = None,
+    ) -> dict[str, Any]:
+        """Adiciona um job de treinamento à fila sequencial. Se não houver treino rodando, inicia imediatamente."""
+        with self._lock:
+            job_id = uuid.uuid4().hex[:10]
+            job = {
+                "id": job_id,
+                "kind": "training",
+                "target": target,
+                "command_list": [str(c) for c in command],
+                "command": subprocess.list2cmdline([str(c) for c in command]),
+                "cwd": str(cwd) if cwd is not None else None,
+                "env": env,
+                "status": "queued",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": None,
+                "returncode": None,
+                "metadata": metadata or {},
+                "log_path": str(log_path) if log_path is not None else None,
+                "_log_path": log_path,
+                "lines": [],
+                "process": None,
+            }
+            self._jobs[job_id] = job
+            self._queue.append(job)
+            self._process_queue_locked()
+            return self._public(job)
+
+    def _process_queue_locked(self) -> None:
+        """Processa a fila de treinamentos iniciando o próximo job pendente caso nenhum esteja rodando."""
+        if self._active_training_job_id is not None:
+            # Verifica se o treino ativo ainda está rodando
+            active_job = self._jobs.get(self._active_training_job_id)
+            if active_job and active_job.get("process"):
+                self._refresh(active_job)
+                if active_job["status"] in {"running", "stopping"}:
+                    return
+            self._active_training_job_id = None
+
+        # Procura o próximo job com status 'queued'
+        while self._queue:
+            next_job = self._queue.pop(0)
+            if next_job["status"] != "queued":
+                continue
+
+            try:
+                process = subprocess.Popen(
+                    next_job["command_list"],
+                    cwd=next_job["cwd"],
+                    env=next_job["env"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    **process_group_options(hidden=True),
+                )
+                next_job["process"] = process
+                next_job["status"] = "running"
+                next_job["started_at"] = datetime.now(timezone.utc).isoformat()
+                self._active_training_job_id = next_job["id"]
+                self._persist(next_job)
+                threading.Thread(target=self._collect_and_advance, args=(next_job,), daemon=True).start()
+                break
+            except Exception as exc:
+                next_job["status"] = "failed"
+                next_job["lines"].append(f"Erro ao iniciar processo: {exc}")
+                self._persist(next_job)
+
+    def _collect_and_advance(self, job: dict[str, Any]) -> None:
+        self._collect(job)
+        with self._lock:
+            if self._active_training_job_id == job["id"]:
+                self._active_training_job_id = None
+            self._process_queue_locked()
+
+    def cancel_queued(self, job_id: str) -> dict[str, Any]:
+        """Remove um treinamento que está na fila (que ainda não começou)."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise WorkflowError("Treinamento não encontrado.")
+            if job["status"] != "queued":
+                raise WorkflowError(f"Não é possível cancelar um treinamento com status '{job['status']}'.")
+            job["status"] = "cancelled"
+            if job in self._queue:
+                self._queue.remove(job)
+            self._persist(job)
+            return self._public(job)
 
     def start(
         self,
@@ -127,13 +227,23 @@ class JobManager:
             JobManager._persist(job)
 
     @staticmethod
+    def _sanitize_for_json(obj: Any) -> Any:
+        if isinstance(obj, Path):
+            return str(obj)
+        if isinstance(obj, dict):
+            return {k: JobManager._sanitize_for_json(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [JobManager._sanitize_for_json(i) for i in obj]
+        return obj
+
+    @staticmethod
     def _persist(job: dict[str, Any]) -> None:
         log_path = job.get("_log_path")
         if log_path is None:
             return
         log_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            key: value
+            key: JobManager._sanitize_for_json(value)
             for key, value in job.items()
             if key not in {"process", "shutdown_file", "lines", "_log_path"}
         }
@@ -143,11 +253,13 @@ class JobManager:
 
     @staticmethod
     def _public(job: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: value
+        raw = {
+            key: JobManager._sanitize_for_json(value)
             for key, value in job.items()
             if key not in {"process", "shutdown_file", "_log_path"}
-        } | {"log": "\n".join(job["lines"])}
+        }
+        raw["log"] = "\n".join(job["lines"])
+        return raw
 
     def get(self, job_id: str) -> dict[str, Any]:
         """Obtém o status atualizado e os logs de um job específico pelo ID."""
