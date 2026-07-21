@@ -37,7 +37,7 @@ class Predictor(Protocol):
 
     @property
     def model_version(self) -> str:
-        """Retorna uma string identificadora da versão do modelo (ex: baseada no hash md5)."""
+        """Retorna uma string identificadora da versão do modelo."""
         ...
 ```
 
@@ -140,9 +140,38 @@ class CustomEngineTrainer(Trainer):
 
 Atualmente, os adaptadores padrão são instanciados e chamados nos seguintes locais:
 
-* **Inferência (Amostragem Inteligente / ML Backend)**:
-  Instanciados na aplicação FastAPI (`src/dataset_studio/web/app.py`) e no ML Backend do Label Studio (`src/dataset_studio/adapters/label_studio/ml_backend.py`), usando por padrão a classe `UltralyticsPredictor` do arquivo `src/dataset_studio/adapters/ultralytics/predictor.py`.
+* **Inferência (Amostragem Inteligente / Pré-anotação / ML Backend)**:
+  A extração e pré-anotação são orquestradas em `src/dataset_studio/adapters/opencv/media.py`. O runner do backend fica em `src/dataset_studio/adapters/label_studio/runner.py`, e a conversão para o protocolo do Label Studio fica em `ml_backend.py`. O adaptador padrão é `UltralyticsPredictor`.
 * **Treinamento**:
-  O comando é gerado em `src/dataset_studio/application/release_service.py` na função `training_recipe`, que instancia o `UltralyticsCommandTrainer` para obter a lista de argumentos de linha de comando que o `JobManager` irá gerenciar em segundo plano.
+  O comando é gerado em `src/dataset_studio/application/version_service.py` na função `training_recipe`, que instancia `UltralyticsCommandTrainer`. O adaptador usa `sys.executable`, portanto executa no ambiente do próprio Dataset Studio.
 
 Se você criar um novo adaptador, basta substituir ou estender essas chamadas de instanciação, injetando sua nova classe concreta. Como a lógica de negócio só conhece os contratos `Predictor` e `Trainer`, nenhuma outra linha do domínio precisará ser alterada.
+
+---
+
+## 5. Requisitos para um Predictor de produção
+
+Além do protocolo mínimo, um adaptador usado pelo fluxo atual deve considerar:
+
+- Carregamento antecipado no processo do ML Backend, para que `/health` só fique disponível depois de o modelo estar utilizável.
+- `model_version` estável, preferencialmente derivada de nome, tamanho, data ou hash do artefato.
+- Coordenadas `bbox_xyxy` absolutas em pixels.
+- Mapeamento de `class_id` compatível com `source.yaml`.
+- Opções de inferência como confiança, device, imgsz, IoU, max_det e meia precisão.
+- Aplicação de ROI antes da inferência, quando configurada.
+- Ausência de caminhos fixos para repositórios ou ambientes externos.
+
+O `GenericLabelStudioBackend` recebe `class_names` e `default_root` explicitamente. Referências `/data/local-files/?d=...` são resolvidas apenas dentro do document root permitido.
+
+## 6. Requisitos para um Trainer de produção
+
+O comando retornado deve:
+
+- ser uma lista de argumentos, sem depender de interpretação de shell;
+- usar caminhos absolutos para `data.yaml` e `project`;
+- respeitar o `training_id` recebido em `params.name`;
+- permitir `exist_ok=True`, pois `workflow_job.json` e `train.log` são criados no diretório antes do Ultralytics iniciar;
+- produzir artefatos dentro de `runs/detect/<training_id>/`;
+- não escolher executáveis de outro projeto.
+
+O estado persistido do treinamento não pertence ao adaptador. Essa responsabilidade é do `JobManager`, que grava `workflow_job.json` ao enfileirar, iniciar, concluir, falhar ou cancelar a execução.

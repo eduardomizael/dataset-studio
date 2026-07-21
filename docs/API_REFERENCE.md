@@ -1,368 +1,275 @@
-# Referência da API REST - Dataset Studio 🌐
+# Referência da API REST — Dataset Studio
 
-A interface web do **Dataset Studio** é suportada por uma API REST desenvolvida em **FastAPI**. Esta API local gerencia as operações do workspace, o ciclo de vida das campanhas (origens), a materialização de releases (versões) e os treinamentos YOLO.
+A API FastAPI é local por padrão em http://127.0.0.1:8000. O prefixo canônico é /api.
 
-Por padrão, a API roda localmente em `http://127.0.0.1:8000/api`.
+Os termos source e version são canônicos. As rotas campaign e release são aliases de compatibilidade e podem ser removidas em uma futura versão principal.
 
----
+## Convenções
 
-## 1. Workspace
+- Sucesso: HTTP 200 com JSON.
+- Erro de regra de negócio ou confirmação: HTTP 400 com campo detail.
+- Recurso inexistente: HTTP 404 nas rotas que fazem essa distinção.
+- IDs aceitam letras, números, hífen e sublinhado.
+- Exclusões exigem o parâmetro confirm igual ao ID do recurso.
 
-### `GET /api/workspace`
-Retorna informações estruturais e caminhos absolutos do workspace de dados atualmente ativo.
+## Workspace e modelos
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "root": "D:\\dataset-studio",
-    "sources_root": "D:\\dataset-studio\\campaigns",
-    "versions_root": "D:\\dataset-studio\\dataset\\releases",
-    "campaigns_root": "D:\\dataset-studio\\campaigns",
-    "releases_root": "D:\\dataset-studio\\dataset\\releases",
-    "videos_root": "D:\\dataset-studio\\videos"
+### GET /api/workspace
+
+Retorna root, sources_root, versions_root, videos_root e os aliases legados.
+
+### GET /api/models
+
+Lista caminhos relativos de modelos .pt dentro de models/.
+
+Exemplo:
+
+~~~json
+[
+  "models/yolo26n.pt",
+  "models/modelo_especializado.pt"
+]
+~~~
+
+## Origens
+
+Todas as rotas abaixo também aceitam /api/campaigns no lugar de /api/sources, exceto quando indicado.
+
+### GET /api/sources
+
+Lista os IDs existentes.
+
+### POST /api/sources
+
+Cria uma origem a partir de vídeos já presentes no disco.
+
+~~~json
+{
+  "source_id": "origem_01",
+  "videos_dir": "videos/origem_01",
+  "video_pattern": "*.mp4",
+  "video_files": ["video_01.mp4"],
+  "video_notes": {"video_01.mp4": "iluminação normal"},
+  "classes": ["peixe"]
+}
+~~~
+
+### POST /api/sources/upload
+
+Recebe multipart/form-data:
+
+- source_id ou campaign_id;
+- classes como lista JSON serializada;
+- video_notes como objeto JSON serializado;
+- um ou mais campos videos.
+
+Os arquivos passam por staging, validação de nome e isolamento em videos/<source_id>/. Uploads duplicados ou com path traversal são rejeitados.
+
+### GET /api/sources/{source_id}
+
+Retorna vídeos, detalhes das mídias, extração configurada, backend de anotação, frames, tasks, revisões, exportações encontradas e next_action.
+
+Esta consulta não aceita exportações e não cria revisões.
+
+### POST /api/sources/{source_id}/extract
+
+Configura e executa a extração. Só pode ser chamada antes de existirem frames.
+
+Modo uniforme:
+
+~~~json
+{
+  "mode": "uniform",
+  "uniform_frame_step": 30
+}
+~~~
+
+Modo inteligente:
+
+~~~json
+{
+  "mode": "smart",
+  "model": "models/modelo.pt",
+  "confidence": 0.25,
+  "scan_step": 15,
+  "dense_step": 30,
+  "sparse_step": 90,
+  "margin": 45,
+  "max_negatives_per_video": 15
+}
+~~~
+
+O modelo precisa estar dentro de models/.
+
+### POST /api/sources/{source_id}/import-tasks
+
+Gera label_studio/import_tasks.json. Depois do sucesso, a origem fica fixada.
+
+Sem pré-anotação:
+
+~~~json
+{"mode": "none"}
+~~~
+
+Com pré-anotação:
+
+~~~json
+{
+  "mode": "model",
+  "model": "models/modelo.pt",
+  "confidence": 0.25
+}
+~~~
+
+O valor existing preserva predições já existentes no frame_manifest.json.
+
+### GET /api/sources/{source_id}/finished-tasks
+
+Inspeciona os JSONs em label_studio/finished_tasks/ e retorna métricas, erros e validade. Não cria revisões.
+
+### POST /api/sources/{source_id}/accept-export
+
+Cria uma revisão explícita e imutável.
+
+~~~json
+{
+  "path": "C:\\workspace\\dataset\\sources\\origem_01\\label_studio\\finished_tasks\\export.json",
+  "revision_id": "rev_001",
+  "allow_pending": false
+}
+~~~
+
+allow_pending=true permite snapshot parcial e marca a versão derivada como provisória.
+
+### POST /api/sources/{source_id}/start-label-studio
+
+~~~json
+{
+  "enable_ml": true,
+  "model": "models/modelo.pt"
+}
+~~~
+
+Quando enable_ml é verdadeiro, o ML Backend é iniciado primeiro e precisa responder com saúde UP na porta 9090. Em seguida, o Label Studio é iniciado na porta 8080. A API só retorna online=true quando o Label Studio responde.
+
+## Versões
+
+As rotas também aceitam /api/releases como alias.
+
+### GET /api/versions
+
+Lista versões configuradas e materializadas.
+
+### POST /api/versions/preview-split
+
+Calcula vídeos, frames e caixas por split antes da criação.
+
+~~~json
+{
+  "source_id": "origem_01",
+  "revision_id": "rev_001",
+  "assignments": {
+    "train": ["origem_01/video_01.mp4"],
+    "val": ["origem_01/video_02.mp4"],
+    "test_normal": [],
+    "test_stress": []
   }
-  ```
+}
+~~~
 
----
+### POST /api/versions
 
-## 2. Modelos e Treinamentos
-
-### `GET /api/models`
-Lista todos os modelos pré-treinados (`.pt`) disponíveis na pasta `models/` que podem ser usados para extração inteligente ou ML Backend.
-
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  [
-    "yolov8n.pt",
-    "yolo26n.pt"
-  ]
-  ```
-
-### `GET /api/trainings`
-Lista os treinamentos YOLO (concluídos ou em execução) encontrados na pasta `runs/detect/`.
-
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  [
-    {
-      "name": "release_01",
-      "status": "completed",
-      "model": "YOLO",
-      "best": "D:\\dataset-studio\\runs\\detect\\release_01\\weights\\best.pt"
-    }
-  ]
-  ```
-
----
-
-## 3. Origens de Dados / Campanhas (`sources` ou `campaigns`)
-
-> [!NOTE]
-> Por questões de retrocompatibilidade e facilidade de transição de termos técnicos, todas as rotas de origens de dados aceitam os prefixos `/api/sources` e `/api/campaigns`.
-
-### `GET /api/sources` | `GET /api/campaigns`
-Retorna uma lista com os identificadores das origens de dados criadas no workspace.
-
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  ["origem_peixes_01", "origem_peixes_02"]
-  ```
-
-### `POST /api/sources` | `POST /api/campaigns`
-Cria uma nova estrutura de origem de dados (sem upload físico imediato de arquivos).
-
-* **Corpo da Requisição (JSON)**:
-  ```json
-  {
-    "source_id": "origem_peixes_01",
-    "videos_dir": "videos",
-    "video_pattern": "*.mp4",
-    "classes": ["peixe", "detrito"]
+~~~json
+{
+  "version_id": "dataset_v1",
+  "sources": ["origem_01"],
+  "annotation_revisions": {"origem_01": "rev_001"},
+  "assignments": {
+    "train": ["origem_01/video_01.mp4"],
+    "val": ["origem_01/video_02.mp4"],
+    "test_normal": ["origem_01/video_03.mp4"],
+    "test_stress": ["origem_01/video_04.mp4"]
   }
-  ```
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "path": "D:\\dataset-studio\\campaigns\\origem_peixes_01"
-  }
-  ```
+}
+~~~
 
-### `POST /api/sources/upload` | `POST /api/campaigns/upload`
-Cria uma origem de dados recebendo fisicamente os arquivos de vídeo via formulário multipart. Salva os vídeos no diretório `videos/` do workspace.
+Cada vídeo deve aparecer exatamente uma vez. train e val precisam conter frames utilizáveis.
 
-* **Corpo da Requisição (`multipart/form-data`)**:
-  * `source_id` (string, opcional): ID da origem.
-  * `campaign_id` (string, opcional): ID alternativo da origem.
-  * `classes` (string, JSON): Lista de classes, ex: `'["peixe"]'`.
-  * `videos` (arquivos): Um ou mais arquivos de vídeo.
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "path": "D:\\dataset-studio\\campaigns\\origem_peixes_01"
-  }
-  ```
+### POST /api/versions/{version_id}/build
 
-### `GET /api/sources/{source_id}` | `GET /api/campaigns/{source_id}`
-Retorna o estado detalhado de uma campanha/origem de dados, incluindo contagem de vídeos, frames e tarefas para o Label Studio.
+Materializa em staging e publica de forma transacional em dataset/versions/<version_id>/. Uma versão que já possui manifest.csv não pode ser reconstruída.
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "source_id": "origem_peixes_01",
-    "videos": 3,
-    "frames": 120,
-    "import_tasks": 120,
-    "next_action": "label_studio",
-    "video_details": [
-      {
-        "name": "canaleta_fluxo_01.mp4",
-        "size_human": "12.4 MB",
-        "resolution": "1920x1080",
-        "fps": 30.0
-      }
-    ],
-    "finished_info": {
-      "found": true,
-      "latest_file": {
-        "name": "project-1-at-2026-07-20-17-00.json"
-      },
-      "metrics": {
-        "total_tasks": 120,
-        "total_boxes": 345,
-        "confirmed_negatives": 15,
-        "class_counts": {
-          "peixe": 345
-        }
-      }
-    }
-  }
-  ```
+### GET /api/versions/{version_id}
 
-### `POST /api/sources/{source_id}/extract` | `POST /api/campaigns/{source_id}/extract`
-Dispara o processo síncrono de extração de frames dos vídeos da origem de dados para o disco.
+Retorna configuração, revisões, splits, estado de materialização, build_report e receita de treinamento.
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "manifest": "D:\\dataset-studio\\campaigns\\origem_peixes_01\\frames\\frame_manifest.json"
-  }
-  ```
+### POST /api/versions/{version_id}/start-train
 
-### `POST /api/sources/{source_id}/import-tasks` | `POST /api/campaigns/{source_id}/import-tasks`
-Gera o arquivo `import_tasks.json` estruturado, pronto para ser importado no Label Studio.
+~~~json
+{
+  "model": "models/modelo.pt",
+  "epochs": 50,
+  "imgsz": 640,
+  "batch": -1,
+  "workers": 0,
+  "device": "auto",
+  "patience": 50,
+  "lr0": 0.01,
+  "optimizer": "auto"
+}
+~~~
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "output": "D:\\dataset-studio\\campaigns\\origem_peixes_01\\label_studio\\import_tasks.json"
-  }
-  ```
+Cria um training_id único, enfileira a execução e persiste workflow_job.json em runs/detect/<training_id>/.
 
-### `POST /api/sources/{source_id}/start-label-studio` | `POST /api/campaigns/{source_id}/start-label-studio`
-Inicializa o processo do Label Studio em segundo plano e, se solicitado, inicializa também o ML Backend (servidor de predições).
+## Treinamentos
 
-* **Corpo da Requisição (JSON)**:
-  ```json
-  {
-    "enable_ml": true,
-    "model": "yolo26n.pt"
-  }
-  ```
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "online": true,
-    "url": "http://127.0.0.1:8080",
-    "ls_job": { "job_id": "ls_job_123", "status": "running" },
-    "ml_job": { "job_id": "ml_job_456", "status": "running" }
-  }
-  ```
+### GET /api/trainings
 
-### `POST /api/sources/{source_id}/accept-export` | `POST /api/campaigns/{source_id}/accept-export`
-Consome e valida o arquivo JSON exportado do Label Studio, criando um snapshot imutável de revisão.
+Lista os diretórios de runs/detect e seus estados persistidos.
 
-* **Corpo da Requisição (JSON)**:
-  ```json
-  {
-    "path": "D:\\dataset-studio\\campaigns\\origem_peixes_01\\label_studio\\finished_tasks\\export.json",
-    "revision_id": "r001",
-    "allow_pending": false
-  }
-  ```
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "accepted": "D:\\dataset-studio\\campaigns\\origem_peixes_01\\revisions\\r001\\annotations.json",
-    "report": "D:\\dataset-studio\\campaigns\\origem_peixes_01\\revisions\\r001\\revision_report.json"
-  }
-  ```
+### GET /api/trainings/{training_id}
 
----
+Retorna parâmetros, logs, métricas, pesos, duração e versão associada. Treinamentos legados tentam recuperar a versão pelo caminho data do args.yaml.
 
-## 4. Versões de Dataset / Releases (`versions` ou `releases`)
+### POST /api/trainings/{training_id}/promote
 
-### `GET /api/versions` | `GET /api/releases`
-Retorna a lista de todas as versões materializadas do dataset.
+Promove best.pt para models/. O corpo opcional aceita `target_name`; use apenas um nome de arquivo terminado em `.pt`, sem componentes de diretório.
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  ["release_peixes_v1"]
-  ```
+### DELETE /api/trainings/{training_id}?confirm={training_id}
 
-### `POST /api/versions/preview-split` | `POST /api/releases/preview-split`
-Calcula em tempo real a proporção de frames e de caixas de anotação caso o usuário aplique determinada atribuição de vídeos a splits (`train` / `val`).
+Apaga logs, métricas e pesos daquele treinamento.
 
-* **Corpo da Requisição (JSON)**:
-  ```json
-  {
-    "campaign_id": "origem_peixes_01",
-    "assignments": {
-      "train": ["origem_peixes_01/video1.mp4", "origem_peixes_01/video2.mp4"],
-      "val": ["origem_peixes_01/video3.mp4"]
-    },
-    "revision_id": "r001"
-  }
-  ```
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "train": {
-      "videos": 2,
-      "frames": 80,
-      "boxes": 240
-    },
-    "val": {
-      "videos": 1,
-      "frames": 40,
-      "boxes": 105
-    }
-  }
-  ```
+## Exclusão e impacto
 
-### `POST /api/versions` | `POST /api/releases`
-Cria a configuração física e manifestos de uma nova versão do dataset com a divisão selecionada.
+### GET /api/deletion-impact/{resource_type}/{resource_id}
 
-* **Corpo da Requisição (JSON)**:
-  ```json
-  {
-    "release_id": "release_peixes_v1",
-    "campaigns": ["origem_peixes_01"],
-    "assignments": {
-      "train": ["origem_peixes_01/video1.mp4", "origem_peixes_01/video2.mp4"],
-      "val": ["origem_peixes_01/video3.mp4"]
-    },
-    "annotation_revisions": {
-      "origem_peixes_01": "r001"
-    }
-  }
-  ```
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "path": "D:\\dataset-studio\\dataset\\releases\\release_peixes_v1"
-  }
-  ```
+resource_type aceita source, revision, version ou training. Para revision, envie também source_id como query parameter.
 
-### `POST /api/versions/{version_id}/build` | `POST /api/releases/{version_id}/build`
-Materializa fisicamente o dataset estruturando as imagens e rótulos YOLO no disco (`train/images`, `train/labels`, etc.) e gerando o `data.yaml`.
+Retorna dependent_versions, dependent_trainings, shared_video_references e aviso de rastreabilidade.
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "status": "ok",
-    "manifest": "D:\\dataset-studio\\dataset\\releases\\release_peixes_v1\\manifest.csv"
-  }
-  ```
+### DELETE /api/sources/{source_id}
 
-### `GET /api/versions/{version_id}` | `GET /api/releases/{version_id}`
-Retorna informações de status e quantidade de dados na release materializada.
+Query parameters:
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "release_id": "release_peixes_v1",
-    "materialized": true,
-    "classes": ["peixe"],
-    "splits": {
-      "train": { "images": 80, "labels": 80 },
-      "val": { "images": 40, "labels": 40 }
-    }
-  }
-  ```
+- confirm: deve ser igual ao source_id;
+- cascade: se verdadeiro, remove versões e treinamentos dependentes;
+- delete_videos: se verdadeiro, remove também os vídeos associados.
 
-### `POST /api/versions/{version_id}/start-train` | `POST /api/releases/{version_id}/start-train`
-Inicia assincronamente em segundo plano o processo de treinamento YOLO a partir daquela release.
+Sem cascata, a exclusão é permitida e pode deixar recursos inválidos.
 
-* **Corpo da Requisição (JSON)**:
-  ```json
-  {
-    "model": "yolo26n.pt",
-    "epochs": 50,
-    "imgsz": 640,
-    "batch": -1,
-    "workers": 0,
-    "device": "auto",
-    "patience": 50,
-    "lr0": 0.01,
-    "optimizer": "auto"
-  }
-  ```
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "job_id": "train_release_peixes_v1",
-    "status": "running",
-    "command": ["python", "-m", "ultralytics", "detect", "train", "..."],
-    "log_path": "D:\\dataset-studio\\runs\\detect\\release_peixes_v1\\train.log"
-  }
-  ```
+### DELETE /api/sources/{source_id}/revisions/{revision_id}
 
----
+Exige confirm e aceita cascade. Sem cascata, versões que apontavam para a revisão podem ficar inválidas.
 
-## 5. Jobs em Segundo Plano
+### DELETE /api/versions/{version_id}
 
-### `GET /api/jobs`
-Retorna a lista de todos os processos/jobs ativos executando no painel (YOLO, Label Studio, ML Backend).
+Exige confirm e aceita cascade para treinamentos dependentes.
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  [
-    {
-      "job_id": "train_release_peixes_v1",
-      "status": "running",
-      "kind": "training"
-    }
-  ]
-  ```
+## Jobs
 
-### `GET /api/jobs/{job_id}`
-Retorna os metadados do job e a saída do terminal (logs) em tempo real.
+- GET /api/jobs
+- GET /api/jobs/{job_id}
+- POST /api/jobs/{job_id}/stop
+- POST /api/jobs/{job_id}/cancel
 
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "job_id": "train_release_peixes_v1",
-    "status": "running",
-    "kind": "training",
-    "target": "release_peixes_v1",
-    "log": "Epoch    gpu_mem   box_loss   cls_loss   dfl_loss  Instances       Size\n 1/50         0G      1.245     0.8415      1.102         12        640: ..."
-  }
-  ```
-
-### `POST /api/jobs/{job_id}/stop`
-Envia um sinal de encerramento para o processo do job de forma segura.
-
-* **Resposta de Sucesso (`200 OK`)**:
-  ```json
-  {
-    "job_id": "train_release_peixes_v1",
-    "status": "stopped"
-  }
-  ```
+stop interrompe jobs ativos. cancel só se aplica a treinamento ainda enfileirado.

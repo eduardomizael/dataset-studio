@@ -27,6 +27,10 @@ dependencies = [
 yolo = [
     "ultralytics>=8.0.0",
 ]
+cuda = [
+    "torch>=2.7.0; sys_platform == 'win32'",
+    "torchvision>=0.22.0; sys_platform == 'win32'",
+]
 label-studio = [
     "label-studio>=1.12.0",
 ]
@@ -37,6 +41,15 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [project.scripts]
 dataset-studio = "dataset_studio.cli.main:main"

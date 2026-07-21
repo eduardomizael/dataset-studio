@@ -15,15 +15,15 @@ O **Dataset Studio** adota uma **Arquitetura Limpa e Modular** (Ports & Adapters
                                      v
 +-----------------------------------------------------------------------+
 |                          CAMADA DE APLICAÇÃO                          |
-|   JobManager (job_service.py)      |        CampaignService           |
-|   ReleaseService                   |        TrainingRecipe            |
+|   JobManager (job_service.py)      |        SourceService             |
+|   VersionService                   |        TrainingRecipe            |
 +------------------------------------+----------------------------------+
                                      |
                                      v
 +------------------------------------+----------------------------------+
 |                           DOMÍNIO CENTRAL                             |
-|   Workspace                        |        Campaigns & Manifests     |
-|   Annotations & Revisions          |        Releases & Splits         |
+|   Workspace                        |        Sources & Manifests       |
+|   Annotations & Revisions          |        Versions & Splits         |
 +------------------------------------+----------------------------------+
                                      |
                                      v
@@ -54,9 +54,14 @@ dataset-studio/
 │
 ├── models/                      # Diretório contendo modelos pré-treinados (.pt)
 │
-├── runs/                        # Saída de treinamentos do YOLO (padrão runs/detect/<release_id>/)
+├── videos/                      # Vídeos isolados por origem
+│   └── <source_id>/
+├── dataset/
+│   ├── sources/                 # Origens e revisões
+│   └── versions/                # Versões configuradas/materializadas
+├── runs/                        # Saída de treinamentos do YOLO
 │   └── detect/
-│       └── <release_id>/        # Logs, pesos (best.pt, last.pt) e métricas do treino
+│       └── <training_id>/       # workflow_job.json, logs, pesos e métricas
 │
 ├── src/                         # Código-fonte Python do pacote dataset_studio
 │   └── dataset_studio/
@@ -65,9 +70,11 @@ dataset-studio/
 │       ├── domain/              # Regras de Negócio Puramente Decoupled
 │       │   ├── __init__.py
 │       │   ├── workspace.py     # Abstração de Workspace (substitui caminhos fixos)
-│       │   ├── campaigns.py     # Criação, leitura e estado de campanhas
+│       │   ├── sources.py       # Criação, fixação e remoção de origens
 │       │   ├── annotations.py   # Parsing, snapshots imutáveis e revisões de JSON
-│       │   ├── releases.py      # Atribuição de vídeos a splits e materialização
+│       │   ├── versions.py      # Splits, materialização transacional e remoção
+│       │   ├── campaigns.py     # Alias legado para sources.py
+│       │   ├── releases.py      # Alias legado para versions.py
 │       │   └── errors.py        # Exceção central WorkflowError
 │       │
 │       ├── ports/               # Interfaces e Protocolos (Ports)
@@ -88,8 +95,10 @@ dataset-studio/
 │       │
 │       ├── application/         # Serviços de Orquestração da Aplicação
 │       │   ├── __init__.py
-│       │   ├── campaign_service.py # Status de campanhas e inspeção de finished_tasks
-│       │   ├── release_service.py  # Status de releases e calculadora de splits
+│       │   ├── source_service.py   # Status de origens e inspeção de finished_tasks
+│       │   ├── version_service.py  # Status de versões e calculadora de splits
+│       │   ├── campaign_service.py # Alias legado
+│       │   ├── release_service.py  # Alias legado
 │       │   └── job_service.py      # JobManager para execução asíncrona de jobs/logs
 │       │
 │       ├── cli/                 # Interface de Linha de Comando (CLI)
@@ -114,22 +123,45 @@ dataset-studio/
 
 Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspace configurado:
 
-1. **`campaigns/<campaign_id>/`**:
-   - `campaign.yaml`: Manifesto da campanha (vídeos, padrão, classes).
+1. **`dataset/sources/<source_id>/`**:
+   - `source.yaml`: Vídeos, hashes, extração, classes e backend de anotação.
    - `frames/raw/images/`: Imagens extraídas dos vídeos.
-   - `frames/frame_manifest.json`: Registro estruturado dos frames.
+   - `frame_manifest.json`: Registro estruturado dos frames e predições.
    - `label_studio/import_tasks.json`: Tarefas geradas para importação.
    - `label_studio/finished_tasks/`: Pasta onde o usuário salva o JSON final exportado pelo Label Studio.
-   - `revisions/`: Snapshots imutáveis de revisões aceitas (`rev_auto`, `r001`).
+   - `label_studio/revisions/<revision_id>/`: Exportação aceita e relatório imutável.
 
-2. **`dataset/releases/<release_id>/`**:
-   - `release.yaml`: Manifesto de atribuição de vídeos por split.
+2. **`dataset/versions/<version_id>/`**:
+   - `version.yaml`: Revisões escolhidas e atribuição de vídeos aos quatro splits.
    - `data.yaml`: Arquivo de configuração YOLO gerado na materialização.
+   - `data_test_stress.yaml`: Avaliação específica do split de estresse, quando existente.
    - `manifest.csv`: Manifesto tabular da release.
-   - `train/` e `val/`: Pastas físicas com subdiretórios `images/` e `labels/`.
+   - `build_report.json`: Contagens e hashes da materialização.
+   - `images/<split>/` e `labels/<split>/`: Dados físicos em formato YOLO.
 
 3. **`models/`**:
    - Modelos `.pt` pré-treinados colocados pelo usuário para uso na extração inteligente, pré-anotação ou ML Backend.
 
-4. **`runs/detect/<release_id>/`**:
-   - Diretório de saída do treinamento YOLO (logs, gráficos e modelo treinado `best.pt`).
+4. **`runs/detect/<training_id>/`**:
+   - `workflow_job.json`: Estado persistido, parâmetros e `version_id` de origem.
+   - `train.log`, `results.csv`, `args.yaml`, gráficos e `weights/best.pt`.
+
+---
+
+## 4. Invariantes e transações
+
+- Uploads são escritos em staging e publicados em `videos/<source_id>/` somente após validação.
+- A existência de `import_tasks.json` fixa a origem e bloqueia reconstrução pelo domínio, API e interface.
+- Consultas `GET` não aceitam exportações nem criam revisões.
+- Cada revisão é um snapshot explícito de uma exportação nativa do Label Studio.
+- Uma versão exige todos os vídeos atribuídos exatamente uma vez entre `train`, `val`, `test_normal` e `test_stress`.
+- A materialização ocorre em um diretório temporário. O diretório final só é substituído depois que todos os artefatos são concluídos.
+- `manifest.csv` registra hashes da imagem de origem, imagem materializada e label; `build_report.json` registra os hashes do manifesto e da configuração.
+- Exclusão é uma operação destrutiva explícita, separada da imutabilidade durante o ciclo normal.
+
+## 5. Processos e autonomia
+
+- O Label Studio usa a porta 8080 e recebe o workspace como document root para arquivos locais.
+- O ML Backend usa a porta 9090, valida `/health` antes de a API declarar sucesso e carrega modelo, classes, confiança, device e ROI da origem.
+- O treinador chama `sys.executable` do próprio Dataset Studio. Nenhum caminho para outro repositório é permitido.
+- No Windows, o extra `cuda` resolve PyTorch pelo índice oficial CUDA 12.8 configurado em `pyproject.toml`.

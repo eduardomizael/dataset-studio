@@ -1,11 +1,8 @@
 from pathlib import Path
 
-import pytest
 
-from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTrainer
 from dataset_studio.application import (
     TrainingParams,
-    release_status,
     training_recipe,
 )
 from dataset_studio.cli.main import main
@@ -106,7 +103,7 @@ def test_training_params_customization(tmp_path: Path):
 
 
 def test_cli_release_train_dry_run(tmp_path: Path, capsys):
-    ws = create_materialized_release(tmp_path)
+    create_materialized_release(tmp_path)
 
     main([
         "--workspace",

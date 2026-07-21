@@ -1,99 +1,173 @@
-# Tutorial Passo a Passo End-to-End: Detecção de Peixes 🐟
+# Tutorial end-to-end — Dataset Studio
 
-Este tutorial prático guiará você por todas as etapas de uso do **Dataset Studio** a partir do zero. Utilizaremos o caso de estudo de **contagem de peixes em uma canaleta física** para exemplificar o ciclo completo: desde a importação de vídeos inéditos até o treinamento do modelo YOLO sem vazamento de dados.
+Este tutorial percorre o ciclo completo: origem, frames, Label Studio, revisão, versão materializada e treinamentos independentes.
 
----
+## 1. Preparação
 
-## Pré-requisitos
-* Ter o `uv` instalado no sistema.
-* Ter pelo menos um arquivo de vídeo de teste (ex: `peixes_canaleta_01.mp4`).
-* Ter um modelo pré-treinado na pasta `models/` (ex: `models/yolov8n.pt`), caso queira testar a extração inteligente ou o ML Backend.
+Requisitos:
 
----
+- uv instalado;
+- vídeos locais;
+- um modelo .pt em models/ para extração inteligente, pré-anotação ou ML Backend.
 
-## Passo 1: Inicializando o Painel
-Abra o terminal na raiz do projeto `dataset-studio` e inicialize o servidor local:
+Na raiz do repositório:
 
-```bash
-uv run dataset-studio.py
-```
+~~~powershell
+uv sync --all-extras
+uv run --all-extras dataset-studio.py
+~~~
 
-O navegador abrirá automaticamente em `http://127.0.0.1:8000/`.
+O painel abre em http://127.0.0.1:8000/.
 
----
+No Windows com NVIDIA, --all-extras instala o extra CUDA 12.8 declarado no projeto. Confira a GPU com:
 
-## Passo 2: Criando a Origem de Dados (Campanha)
-1. No canto superior direito, clique em **`+ Nova Origem de Dados`** (ou **`+ Nova Campanha`**).
-2. Preencha os campos no modal:
-   * **ID da Origem**: `campanha_peixes`
-   * **Seleção de Vídeos**: Clique na caixa tracejada e selecione os vídeos locais (ex: `peixes_canaleta_01.mp4` e `peixes_canaleta_02.mp4`).
-   * **Classes de Objetos**: Escreva `peixe` (se forem múltiplas, separe por vírgula).
-3. Clique em **`Criar Origem de Dados`**. Os vídeos serão salvos internamente no diretório `videos/` e a campanha aparecerá na primeira coluna do Dashboard.
+~~~powershell
+uv run --all-extras python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)"
+~~~
 
----
+## 2. Criar uma origem
 
-## Passo 3: Amostragem e Extração de Frames
-Clique na campanha recém-criada na tela inicial para entrar nos detalhes dela:
+1. Clique em Nova Origem de Dados.
+2. Informe um ID, por exemplo canaleta_2026_07.
+3. Selecione os vídeos.
+4. Informe as classes, por exemplo peixe.
+5. Opcionalmente, registre uma observação por vídeo.
 
-1. A **Etapa 1 (Seleção dos Vídeos)** já estará concluída.
-2. Abra a **Etapa 2 (Seleção do Modo de Extração)**:
-   * **Modo Uniforme (Recomendado)**: Selecione-o e defina `30` como intervalo (`frame_step`). Isso extrairá 1 frame a cada 30 quadros do vídeo (aproximadamente 1 imagem por segundo).
-   * **Modo Inteligente**: Selecione-o se tiver um modelo base em `models/` e desejar extrair apenas frames onde o modelo detectar a presença de peixes.
-3. Clique em **`▶ Executar Extração de Frames`**. Uma barra de progresso ou logs serão exibidos, salvando as imagens extraídas na pasta `campaigns/campanha_peixes/frames/raw/images/`.
+Os uploads novos ficam em:
 
----
+    videos/canaleta_2026_07/
 
-## Passo 4: Pré-Anotação e Carga no Label Studio
-1. Abra a **Etapa 3 (Pré-Anotação)**:
-   * Para este tutorial, selecione **`Pular Pré-Anotação`** para realizar a rotulação de forma manual e limpa.
-   * Se preferir usar predições de um modelo prévio como ponto de partida (sugestão de caixas), selecione **`Usar Modelo de Detecção para Pré-Anotar`** e selecione o arquivo correspondente em `models/`.
-2. Clique em **`▶ Gerar import_tasks.json`**. O arquivo estruturado de tarefas será salvo na pasta da campanha.
+O manifesto inicial fica em:
 
----
+    dataset/sources/canaleta_2026_07/source.yaml
 
-## Passo 5: Rotulação no Label Studio (Human-in-the-Loop)
-1. Abra a **Etapa 4**.
-2. Opcional: Marque a caixa **`Iniciar Servidor de Detecção em Segundo Plano (ML Backend na porta 9090)`** e escolha um modelo para auxiliar a rotulação ao vivo.
-3. Clique em **`🚀 Iniciar Label Studio (+ ML Backend)`**. O Dataset Studio abrirá uma aba no navegador com a interface do Label Studio rodando em `http://127.0.0.1:8080`.
-4. **No Label Studio**:
-   * Crie um projeto de detecção de objetos (Object Detection).
-   * Vá em **Settings > Labeling Interface** e defina o painel XML correspondente à sua classe `peixe`.
-   * Vá em **Settings > Cloud Storage**, adicione um armazenamento do tipo **Local Files** apontando para o diretório físico absoluto da campanha e faça o Sync.
-   * Importe o arquivo `import_tasks.json` gerado no Passo 4.
-   * Realize as anotações (desenhe as bboxes nos peixes).
-   * Ao finalizar, clique em **`Export`**, selecione o formato **JSON** e baixe o arquivo.
+## 3. Extrair frames
 
----
+Escolha uma das opções:
 
-## Passo 6: Conclusão da Campanha e Revisão
-1. Salve o arquivo JSON exportado do Label Studio dentro da pasta de destino da campanha:
-   `campaigns/campanha_peixes/label_studio/finished_tasks/` (você pode renomear o arquivo para algo como `export.json`).
-2. O Dataset Studio detectará o arquivo automaticamente em poucos segundos.
-3. A Etapa 4 atualizará o status para **`✓ Concluído`** e abrirá o painel de métricas consolidado, mostrando o número exato de peixes anotados.
-4. Clique no botão **`📦 Seguir para Criar Release`**.
+- Uniforme: extrai um frame a cada uniform_frame_step quadros.
+- Inteligente: faz um scan inicial com o modelo, usa dense_step em regiões detectadas e sparse_step para negativos.
 
----
+No modo inteligente, selecione um modelo dentro de models/. A configuração escolhida é persistida e a interface passa a exibi-la como somente leitura após a extração.
 
-## Passo 7: Divisão de Splits por Vídeo Completo (Sem Data Leakage)
-Na tela de criação da release (`release.html`):
+Resultados:
 
-1. O sistema listará os dois vídeos originais (`peixes_canaleta_01.mp4` e `peixes_canaleta_02.mp4`).
-2. **Evite o Vazamento Temporal**: Em datasets de vídeo, frames consecutivos de um mesmo vídeo são altamente correlacionados. Se você misturar frames do mesmo vídeo em Treino e Validação, seu modelo terá um mAP artificialmente alto durante o treino, mas falhará em novos vídeos.
-3. Defina a atribuição:
-   * `peixes_canaleta_01.mp4` &rarr; Atribua para **Train** (Treino).
-   * `peixes_canaleta_02.mp4` &rarr; Atribua para **Val** (Validação).
-4. Observe a calculadora na tela recalculando em tempo real o balanceamento de frames e de caixas em cada split.
-5. Defina o ID da release como `release_peixes_v1`.
-6. Clique em **`🔨 Materializar Dataset`**. O sistema estruturará os subdiretórios `train/images`, `train/labels`, `val/images` e `val/labels` no formato padrão YOLO e gerará o arquivo `data.yaml`.
+    dataset/sources/canaleta_2026_07/frame_manifest.json
+    dataset/sources/canaleta_2026_07/frames/raw/images/
 
----
+## 4. Gerar import_tasks.json
 
-## Passo 8: Executando o Treinamento YOLO
-1. Na mesma tela (agora com o dataset materializado):
-   * Escolha o modelo base (ex: `yolo26n.pt` ou outro modelo em `models/`).
-   * Defina `50` épocas e tamanho de imagem `640`.
-2. Clique em **`🚀 Iniciar Treinamento`**.
-3. O painel ativará o monitor em tempo real (terminal de logs do YOLO) na tela. Você poderá acompanhar as épocas passando e a perda (loss) decaindo.
-4. Ao final do treino, os melhores pesos resultantes (`best.pt`) estarão salvos no diretório:
-   `runs/detect/release_peixes_v1/weights/best.pt`.
-5. O novo modelo estará pronto para ser testado e implantado no seu sistema de borda!
+Escolha:
+
+- Pular pré-anotação: tasks sem sugestões.
+- Usar modelo: todas as imagens recebem predições antes da geração.
+
+Depois, clique em Gerar import_tasks.json.
+
+Importante: esse é o ponto de fixação da origem. O mesmo ID não permite reextração nem reconstrução de import_tasks.json. Se a configuração estiver errada, exclua a origem conscientemente e crie outra.
+
+## 5. Iniciar Label Studio
+
+Na etapa de anotação:
+
+1. Opcionalmente habilite o ML Backend e escolha o modelo.
+2. Clique em Iniciar Label Studio.
+3. O backend de predição sobe em http://127.0.0.1:9090.
+4. O Label Studio sobe em http://127.0.0.1:8080.
+
+A API só declara sucesso depois de validar /health do backend e a disponibilidade do Label Studio.
+
+No Label Studio:
+
+1. Crie um projeto de detecção.
+2. Use o conteúdo de label_studio/labeling_config.xml como interface.
+3. Importe label_studio/import_tasks.json.
+4. Se usar o backend ao vivo, registre http://127.0.0.1:9090 nas configurações de Machine Learning do projeto.
+5. Anote as imagens.
+6. Exporte no formato JSON nativo.
+
+Os caminhos em import_tasks.json usam /data/local-files com o workspace como document root. Não é necessário duplicar as imagens.
+
+## 6. Criar revisões
+
+Copie cada exportação para:
+
+    dataset/sources/canaleta_2026_07/label_studio/finished_tasks/
+
+O Dataset Studio inspeciona todos os JSONs e mostra métricas, mas não aceita automaticamente nenhum deles. Escolha explicitamente a exportação desejada.
+
+Cada aceite cria:
+
+    dataset/sources/canaleta_2026_07/label_studio/revisions/<revision_id>/
+
+Você pode aceitar quantas revisões quiser. Uma revisão parcial só deve usar allow_pending quando essa provisoriedade for intencional.
+
+## 7. Criar uma versão
+
+Escolha uma revisão e atribua cada vídeo exatamente uma vez:
+
+- train;
+- val;
+- test_normal;
+- test_stress.
+
+Exemplo:
+
+- vídeos principais de treinamento em train;
+- um vídeo representativo em val;
+- aquisição comum independente em test_normal;
+- iluminação, densidade ou movimento difíceis em test_stress.
+
+Nunca divida frames do mesmo vídeo entre splits.
+
+## 8. Materializar
+
+Clique em Materializar Dataset. A construção acontece em staging e só é publicada após sucesso integral.
+
+Estrutura final:
+
+    dataset/versions/dataset_canaleta_v1/
+      version.yaml
+      manifest.csv
+      build_report.json
+      data.yaml
+      data_test_stress.yaml
+      images/<split>/
+      labels/<split>/
+
+Uma versão materializada não pode ser reconstruída no mesmo ID. Crie dataset_canaleta_v2 para alterar revisão ou splits.
+
+## 9. Treinar
+
+Na versão materializada:
+
+1. Escolha modelo base, épocas, imgsz, batch, device e demais parâmetros.
+2. Inicie o treinamento.
+3. A fila executa um treinamento por vez.
+
+Cada execução recebe um ID próprio:
+
+    runs/detect/t_20260721T203000_a1b2c3/
+
+O diretório contém workflow_job.json, train.log, args.yaml, results.csv, gráficos e weights/. A mesma versão pode ser treinada repetidamente com parâmetros diferentes.
+
+## 10. Excluir recursos
+
+Ao excluir:
+
+- consulte as versões e treinamentos dependentes;
+- decida se deseja cascata;
+- para origens, decida se os vídeos físicos também devem ser apagados;
+- verifique o aviso sobre vídeos compartilhados;
+- digite exatamente o ID solicitado.
+
+Cancelar a cascata não cancela necessariamente a exclusão do recurso principal: dependentes podem ser preservados e ficar inválidos por decisão do usuário.
+
+## Checklist final
+
+- import_tasks.json foi gerado uma única vez;
+- a exportação correta virou revisão;
+- todos os vídeos estão em um único split;
+- manifest.csv e build_report.json existem;
+- workflow_job.json aponta para a versão correta;
+- best.pt pertence ao training_id esperado.

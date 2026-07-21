@@ -81,18 +81,18 @@ O Dataset Studio adota uma arquitetura modular baseada em **Arquitetura Limpa (P
 
 Abaixo é descrito o fluxo metodológico para curar e treinar o modelo de detecção de peixes a partir da canaleta física:
 
-1.  **Ingestão de Mídias (Fase 1)**: Gravações de vídeo da canaleta física (arquivos `.mp4` capturados pelo módulo de gravação do software de detecção) são importadas para a campanha do Dataset Studio.
+1.  **Ingestão de Mídias (Fase 1)**: Gravações de vídeo da canaleta física são importadas para uma origem isolada do Dataset Studio.
 2.  **Extração Filtrada (Fase 2)**: Roda-se a extração de frames. O usuário opta pela Extração Inteligente (carregando, por exemplo, o modelo `yolo26n.pt` pré-treinado no diretório `models/`). O sistema gera imagens apenas nos frames em que peixes foram detectados, salvando-as na estrutura `frames/raw/images/`.
 3.  **Geração e Ingestão do Label Studio (Fase 3 & 4)**: 
     *   O Dataset Studio gera o arquivo `import_tasks.json`.
-    *   Um servidor de ML Backend é ativado na porta `9090`, carregando o modelo YOLO para fornecer auxílio em tempo real.
+    *   Opcionalmente, um ML Backend é validado na porta `9090`, carregando modelo, classes, confiança, device e ROI da origem.
     *   O usuário abre a interface integrada do Label Studio e realiza a rotulação.
     *   Ao finalizar, o usuário exporta o arquivo JSON e o salva em `label_studio/finished_tasks/`. O Dataset Studio detecta o arquivo automaticamente e renderiza um dashboard com métricas do dataset (ex: contagem de peixes anotados por vídeo e distribuição de bboxes).
 4.  **Criação de Release Imutável (Fase 5)**: O usuário designa os vídeos inteiros para `Train` ou `Val`. Vídeos sob condições climáticas desfavoráveis ou ruído visual na canaleta podem ser alocados como `test_stress` para avaliar o limite de quebra do modelo. O dataset é materializado fisicamente no formato padrão YOLO, gerando o `manifest.csv` e `build_report.json` com assinaturas SHA-256.
-5.  **Treinamento Executável (Fase 6)**: O modelo YOLO (como o YOLO26n) é treinado na release materializada. O Dataset Studio gerencia os hiperparâmetros (épocas, batch, imgsz) e direciona os logs do terminal para a página web da aplicação em tempo real. Os melhores pesos (`best.pt`) são salvos e disponibilizados para deploy imediato no dispositivo de borda (Raspberry Pi).
+5.  **Treinamento Executável (Fase 6)**: O modelo YOLO é treinado na versão materializada. Cada execução recebe um identificador próprio, persiste parâmetros e proveniência em `workflow_job.json` e salva pesos e métricas em `runs/detect/<training_id>/`. A implantação em dispositivo de borda permanece uma etapa posterior de validação.
 
 > **[INSERIR FIGURA 2: Visualização da interface do usuário mostrando o fluxo em acordeão e a tela de splits]**
-> *Legenda sugerida: Figura 2. Interface web do Dataset Studio: (a) ciclo de vida de campanha dividido em quatro passos progressivos; (b) painel de divisão por vídeo com calculadora dinâmica de proporção de treino/validação.*
+> *Legenda sugerida: Figura 2. Interface web do Dataset Studio: (a) ciclo de vida da origem; (b) painel de divisão por vídeo entre treino, validação e testes.*
 
 ---
 

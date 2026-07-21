@@ -1,113 +1,191 @@
-# Guia de Resolução de Problemas (Troubleshooting) 🛠️
+# Resolução de problemas
 
-Este documento reúne soluções práticas para as principais dificuldades e erros que podem surgir ao configurar, executar ou estender o **Dataset Studio**.
+## Instalação recomendada
 
----
+Sempre comece pela raiz do repositório:
 
-## 1. Conflito de Portas TCP
-O ecossistema do Dataset Studio utiliza até 3 portas de rede simultaneamente:
-* `8000`: Servidor principal FastAPI (Painel Web).
-* `8080`: Servidor do Label Studio (para anotação).
-* `9090`: Servidor de detecção local (ML Backend).
+~~~powershell
+uv sync --all-extras
+uv run --all-extras dataset-studio.py
+~~~
 
-### Sintoma:
-O servidor do Dataset Studio ou o Label Studio falha ao iniciar com o erro `Address already in use` ou `Port is busy`.
+O uso de --all-extras é necessário para instalar Label Studio, Ultralytics, PyTorch CUDA no Windows e dependências de teste.
 
-### Solução:
-1. **Identificar o processo que está ocupando a porta**:
-   * No Windows (PowerShell):
-     ```powershell
-     Get-NetTCPConnection -LocalPort 8080 | Format-Table -Property LocalAddress, LocalPort, State, OwningProcess
-     ```
-   * No Linux / macOS (Terminal):
-     ```bash
-     lsof -i :8080
-     ```
-2. **Encerrar o processo culpado**:
-   * No Windows:
-     ```powershell
-     Stop-Process -Id <OwningProcess> -Force
-     ```
-   * No Linux / macOS:
-     ```bash
-     kill -9 <PID>
-     ```
-3. **Mudar a porta do Dataset Studio**:
-   * Você pode mudar a porta padrão do Painel Web FastAPI ao inicializar via CLI:
-     ```bash
-     uv run dataset-studio.py --port 8010
-     ```
+## Portas ocupadas
 
----
+Portas padrão:
 
-## 2. Processos Órfãos / Zumbis do Label Studio ou ML Backend
-Ao fechar o terminal do Dataset Studio abruptamente (usando `Ctrl+C` repetidamente ou fechando a janela do console), os subprocessos do Label Studio ou do ML Backend rodando em segundo plano podem continuar ativos.
+- 8000: Dataset Studio;
+- 8080: Label Studio;
+- 9090: ML Backend.
 
-### Sintoma:
-Você tenta reiniciar o Dataset Studio e o Label Studio, mas as portas `8080` ou `9090` já estão ocupadas por processos invisíveis em segundo plano.
+No PowerShell:
 
-### Solução:
-O Dataset Studio gerencia processos filhos de forma segura no encerramento normal. Porém, se houver travamento:
-* No Windows, encerre os processos `label-studio.exe` ou processos `python` que estejam rodando o ML Backend através do Gerenciador de Tarefas ou pelo terminal:
-  ```powershell
-  taskkill /f /im label-studio.exe
-  taskkill /f /im python.exe
-  ```
-* No Linux / macOS:
-  ```bash
-  pkill -f label-studio
-  pkill -f ml_backend
-  ```
+~~~powershell
+Get-NetTCPConnection -LocalPort 8000,8080,9090 -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress,LocalPort,State,OwningProcess
+~~~
 
----
+Verifique o processo antes de encerrá-lo:
 
-## 3. Problemas com Leitura ou Codecs de Vídeo (OpenCV)
-O Dataset Studio depende do OpenCV para inspecionar os arquivos de vídeo e extrair os quadros na pasta da campanha.
+~~~powershell
+Get-Process -Id <PID> | Select-Object Id,ProcessName,Path
+Stop-Process -Id <PID>
+~~~
 
-### Sintoma:
-A extração de frames falha silenciosamente, cria arquivos vazios (`0 bytes`), ou exibe erros como `Assertion failed` ou `VideoReader could not open file`.
+Para alterar apenas a porta do painel:
 
-### Solução:
-* **Verificar o codec do vídeo**: Nem todos os codecs de vídeo são suportados por padrão pelo OpenCV (especialmente se o OpenCV foi instalado sem suporte a codecs proprietários ou FFmpeg). Certifique-se de que os vídeos estão codificados em **H.264 (AVC)** dentro do container **MP4**.
-* **Testar no Python**: Tente abrir o vídeo manualmente em um terminal Python interativo para validar o OpenCV:
-  ```python
-  import cv2
-  cap = cv2.VideoCapture("videos/seu_video.mp4")
-  print("Vídeo aberto?", cap.isOpened())
-  ret, frame = cap.read()
-  print("Frame lido?", ret)
-  cap.release()
-  ```
-  Se retornar `False`, re-codifique o vídeo utilizando ferramentas como o HandBrake ou FFmpeg:
-  ```bash
-  ffmpeg -i video_original.avi -c:v libx264 -an video_convertido.mp4
-  ```
+~~~powershell
+uv run --all-extras dataset-studio.py --port 8010
+~~~
 
----
+As portas 8080 e 9090 ainda são fixas na integração atual.
 
-## 4. O Dataset Studio não detecta o JSON do Label Studio
-Na Etapa 4, o sistema fica travado aguardando o arquivo JSON final e não habilita o botão de seguir para a release.
+## Label Studio não inicia
 
-### Sintoma:
-Você colocou o JSON exportado do Label Studio na pasta `label_studio/finished_tasks/`, mas nada acontece ou a interface não atualiza.
+Confirme:
 
-### Solução:
-1. **Verificar a estrutura de pastas**: O caminho correto para salvar a exportação é:
-   `WORKSPACE/campaigns/<campaign_id>/label_studio/finished_tasks/nome_do_arquivo.json`
-   Certifique-se de que o ID da campanha na pasta corresponde exatamente ao ID visualizado.
-2. **Formato do Arquivo**: Certifique-se de que exportou no formato **JSON** clássico do Label Studio (não JSON-MIN). O parser exige o formato nativo contendo o objeto de tarefas (`tasks`) e suas respectivas anotações (`annotations`).
-3. **Erros no JSON**: Abra o arquivo no editor de texto para certificar-se de que o download foi concluído sem corrompimento e que ele não está vazio.
+~~~powershell
+uv run --all-extras label-studio --version
+~~~
 
----
+Se o executável estiver ausente, repita uv sync --all-extras. O Dataset Studio procura primeiro no mesmo ambiente Python e depois no PATH.
 
-## 5. Falta de Bibliotecas ou Erros de CUDA (PyTorch/Ultralytics)
-Erros que acontecem durante a extração inteligente de frames, pré-anotação por modelo ou ao rodar o comando de treinamento do YOLO.
+O Label Studio abre normalmente na tela de login. Uma resposta HTTP 200 em /user/login/ confirma que o servidor está disponível.
 
-### Sintoma:
-Mensagens como `ModuleNotFoundError: No module named 'ultralytics'`, `CUDA out of memory` ou `CUDA error: device-side assert triggered`.
+## ML Backend não fica saudável
 
-### Solução:
-* **Dependências Não Instaladas**: Se você estiver executando o comando sem o `uv`, as dependências podem não estar isoladas. Execute sempre com `uv run` ou ative o ambiente virtual (`.venv\Scripts\activate` no Windows).
-* **Problemas de CUDA (Memória de Vídeo)**:
-  * Se a GPU (VRAM) ficar sem espaço durante o treinamento, diminua o tamanho do lote de treino (`batch size`). O padrão `-1` tenta calcular automaticamente o máximo tolerado, mas você pode definir um valor estático baixo na CLI ou na Web (ex: `batch=4` ou `batch=8`).
-  * Se a máquina não possuir GPU dedicada com suporte CUDA, selecione explicitamente o dispositivo como `cpu` nas configurações de treino ou inicialização do ML Backend.
+O Dataset Studio consulta http://127.0.0.1:9090/health antes de declarar sucesso.
+
+Verifique:
+
+~~~powershell
+Invoke-RestMethod http://127.0.0.1:9090/health
+~~~
+
+Uma resposta válida contém status UP e model_version.
+
+Se falhar:
+
+- confirme que o modelo está em models/;
+- confirme que source.yaml possui classes corretas;
+- revise annotation.model e annotation.detection_config;
+- verifique CUDA e memória;
+- confirme que a porta 9090 não pertence a outro serviço.
+
+## CUDA não é reconhecida
+
+Diagnóstico:
+
+~~~powershell
+nvidia-smi
+uv run --all-extras python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())"
+~~~
+
+No Windows com NVIDIA, a versão esperada do torch deve possuir sufixo +cu128. Se aparecer +cpu:
+
+~~~powershell
+uv lock
+uv sync --all-extras
+~~~
+
+O pyproject.toml direciona torch e torchvision para o índice oficial pytorch-cu128 quando o extra cuda está ativo.
+
+Para falta de VRAM:
+
+- reduza batch;
+- reduza imgsz;
+- feche outros processos CUDA;
+- use device=cpu somente como fallback.
+
+## OpenCV não abre o vídeo
+
+Teste:
+
+~~~python
+import cv2
+
+cap = cv2.VideoCapture("video.mp4")
+print(cap.isOpened())
+ok, frame = cap.read()
+print(ok, None if frame is None else frame.shape)
+cap.release()
+~~~
+
+Se falhar, converta para MP4/H.264 com FFmpeg:
+
+~~~powershell
+ffmpeg -i entrada.avi -c:v libx264 -an saida.mp4
+~~~
+
+## Upload rejeitado
+
+Uploads são recusados quando:
+
+- o ID é inválido;
+- a origem já existe;
+- o nome contém diretórios, como ../video.mp4;
+- dois arquivos têm o mesmo nome;
+- o staging não consegue ser publicado.
+
+Novas origens ficam em videos/<source_id>/. Um arquivo de outra origem não pode ser sobrescrito por coincidência de nome.
+
+## Extração não pode ser repetida
+
+Depois de existirem frames, a interface bloqueia a etapa. Depois de import_tasks.json existir, a origem está fixada também no domínio.
+
+Isso não é falha. Para mudar configuração:
+
+1. revise o impacto da exclusão;
+2. exclua a origem;
+3. escolha se preserva ou remove os vídeos;
+4. crie uma nova origem.
+
+## Exportação não aparece
+
+O caminho correto é:
+
+    dataset/sources/<source_id>/label_studio/finished_tasks/<arquivo>.json
+
+Use JSON nativo do Label Studio, não JSON-MIN. Atualize a página depois de concluir a cópia.
+
+O arquivo aparecer na inspeção, mas só vira revisão quando o usuário o aceita explicitamente.
+
+## Versão não materializa
+
+Verifique:
+
+- revisão válida para cada origem;
+- todos os vídeos atribuídos exatamente uma vez;
+- train e val com frames utilizáveis;
+- imagens do frame_manifest.json presentes;
+- espaço livre para staging e cópia final.
+
+Diretórios temporários usam nomes .<version_id>.build-<token>. Em falha controlada, são removidos. Se a máquina desligar durante a troca final, não apague manualmente backup e staging antes de inspecioná-los.
+
+## Treinamento aparece sem versão
+
+Treinamentos novos persistem release_id/version_id em workflow_job.json. Para runs legados, a API tenta inferir a versão pelo campo data do args.yaml.
+
+Se ambos estiverem ausentes, os pesos continuam acessíveis, mas a proveniência não pode ser reconstruída automaticamente.
+
+## Exclusão deixou dependentes inválidos
+
+Isso pode acontecer quando o usuário exclui sem cascata. A ação é permitida deliberadamente.
+
+Opções:
+
+- excluir também os recursos órfãos;
+- restaurar o recurso removido a partir de backup;
+- recriar uma versão com revisão existente;
+- manter o treinamento apenas como artefato histórico, reconhecendo a perda de proveniência.
+
+Antes de excluir, consulte /api/deletion-impact/<tipo>/<id>.
+
+## Validação do repositório
+
+~~~powershell
+uv run --all-extras pytest -q
+uv run --all-extras ruff check src tests
+git diff --check
+~~~

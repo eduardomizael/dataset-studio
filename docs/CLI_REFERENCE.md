@@ -1,162 +1,136 @@
-# Guia de Referência do CLI - Dataset Studio 💻
+# Referência da CLI — Dataset Studio
 
-O **Dataset Studio** possui uma interface de linha de comando (CLI) completa e intuitiva, permitindo automatizar tarefas de MLOps, criar campanhas, materializar datasets e disparar treinamentos de modelos YOLO a partir do terminal.
+Instale e execute a CLI no ambiente completo do repositório:
 
-Para rodar os comandos a partir da raiz do repositório utilizando o gerenciador `uv`, utilize o prefixo `uv run dataset-studio` (ou execute a chamada direta ao módulo Python se instalado: `python -m dataset_studio.cli.main`).
+~~~powershell
+uv sync --all-extras
+uv run --all-extras dataset-studio --workspace C:\meu_workspace <comando>
+~~~
 
----
+O workspace padrão é o diretório atual. source e version são os termos canônicos; campaign e release são aliases legados.
 
-## Opções Globais
-* `--workspace <caminho>`: Caminho da raiz do seu workspace de dados. Se omitido, assume a pasta atual (`.`).
+## Origens
 
-Exemplo:
-```bash
-uv run dataset-studio --workspace D:\meu_workspace source list
-```
+### source create
 
----
+Cria source.yaml a partir de vídeos já existentes.
 
-## 1. Subcomandos de Origens de Dados (`source` ou `campaign`)
+~~~powershell
+uv run --all-extras dataset-studio source create --id origem_peixes --videos-dir C:\dados\videos --pattern "*.mp4" --classes peixe
+~~~
 
-Gerencie as campanhas/origens de dados no seu workspace.
+Argumentos:
 
-### `source create`
-Cria uma nova estrutura de pasta e manifesto YAML para uma campanha de dados.
+- --id: identificador único;
+- --videos-dir: diretório dos vídeos;
+- --pattern: glob usado para selecionar vídeos;
+- --classes: uma ou mais classes.
 
-* **Argumentos e Flags**:
-  * `--id <id>` (Obrigatório): Identificador único da origem (ex: `origem_peixes_01`).
-  * `--videos-dir <caminho>` (Opcional): Pasta onde se encontram os vídeos da campanha (padrão: `videos`).
-  * `--pattern <glob>` (Opcional): Padrão glob para buscar vídeos (padrão: `*.mp4`).
-  * `--classes <lista>` (Opcional): Lista de classes que serão rotuladas (padrão: `objeto`).
+A criação pela CLI usa a configuração uniforme padrão. Para upload isolado e configuração visual de extração inteligente, use a interface web.
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio source create --id camp_peixes --videos-dir D:\videos_gravados --pattern "*.mp4" --classes peixe detrito_fisico
-  ```
+### source list
 
-### `source list`
-Lista todos os identificadores de origens de dados configuradas no workspace.
+~~~powershell
+uv run --all-extras dataset-studio source list
+~~~
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio source list
-  ```
+### source status
 
-### `source status`
-Exibe os detalhes de status estruturado de uma origem de dados em formato JSON (quantidade de vídeos, frames extraídos, tarefas geradas, etc.).
+~~~powershell
+uv run --all-extras dataset-studio source status --id origem_peixes
+~~~
 
-* **Argumentos**:
-  * `--id <id>` (Obrigatório): Identificador da origem.
+## Label Studio e revisões
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio source status --id camp_peixes
-  ```
+### build-import
 
----
+Gera import_tasks.json usando o frame_manifest.json existente.
 
-## 2. Geração de Tarefas de Importação (`build-import`)
+~~~powershell
+uv run --all-extras dataset-studio build-import --source origem_peixes
+~~~
 
-### `build-import`
-Lê os frames extraídos de uma origem e monta o arquivo `import_tasks.json` na pasta do Label Studio. Esse arquivo conterá referências de imagens locais e, se configurado, pré-anotações automáticas.
+Esse comando fixa a origem. Se o arquivo já existir, a operação falha em vez de sobrescrevê-lo.
 
-* **Argumentos**:
-  * `--source <id>` (Obrigatório): Identificador da origem.
+### accept-revision
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio build-import --source camp_peixes
-  ```
+~~~powershell
+uv run --all-extras dataset-studio accept-revision --source origem_peixes --export C:\exportacoes\project-1.json --revision-id rev_001
+~~~
 
----
+Use --allow-pending somente quando quiser aceitar tarefas adiadas ou incompletas como snapshot provisório.
 
-## 3. Revisões e Aceite de Anotações (`accept-revision`)
+## Versões
 
-### `accept-revision`
-Valida e consome um JSON final exportado nativamente do Label Studio (no formato JSON convencional do Label Studio) e cria uma revisão snapshot imutável dentro da campanha.
+### version create
 
-* **Argumentos**:
-  * `--source <id>` (Obrigatório): Identificador da origem.
-  * `--export <caminho_arquivo>` (Obrigatório): Caminho físico para o arquivo `.json` exportado do Label Studio.
-  * `--revision-id <id>` (Opcional): Identificador da revisão (padrão: gerado de forma sequencial, ex: `r001`).
-  * `--allow-pending` (Opcional): Flag que aceita a importação mesmo se houver tarefas ainda não completadas ou sem anotações no Label Studio.
+~~~powershell
+uv run --all-extras dataset-studio version create --id dataset_v1 --sources origem_peixes --assignments-json '{"train":["origem_peixes/video_01.mp4"],"val":["origem_peixes/video_02.mp4"],"test_normal":[],"test_stress":[]}'
+~~~
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio accept-revision --source camp_peixes --export D:\exportacoes\project-1.json --revision-id rev_final --allow-pending
-  ```
+Observações:
 
----
+- Todos os vídeos precisam aparecer exatamente uma vez.
+- train e val são obrigatórios.
+- A CLI seleciona a revisão disponível conforme as regras atuais do domínio. Para escolher explicitamente uma revisão por origem, use a interface ou a API.
 
-## 4. Subcomandos de Versões e Splits (`version` ou `release`)
+### version list
 
-Gerencie a criação de conjuntos de dados físicos baseados em splits por vídeo sem vazamento temporal.
+~~~powershell
+uv run --all-extras dataset-studio version list
+~~~
 
-### `version create`
-Configura os arquivos lógicos de uma nova versão do dataset e atribui cada vídeo a um split específico (`train` ou `val`).
+### version status
 
-* **Argumentos**:
-  * `--id <id>` (Obrigatório): ID da nova versão do dataset (ex: `dataset_v1`).
-  * `--sources <lista_de_ids>` (Obrigatório): Um ou mais IDs de campanhas de origem a incluir.
-  * `--assignments-json <json_string>` (Obrigatório): JSON que mapeia os vídeos a seus respectivos papéis (`train` ou `val`).
+~~~powershell
+uv run --all-extras dataset-studio version status --id dataset_v1
+~~~
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio version create --id dataset_v1 --sources camp_peixes --assignments-json "{\"train\":[\"camp_peixes/canaleta_video1.mp4\"], \"val\":[\"camp_peixes/canaleta_video2.mp4\"]}"
-  ```
+### version build
 
-### `version build`
-Materializa fisicamente o dataset na pasta `dataset/releases/<version_id>/`. Copia fisicamente as imagens selecionadas, gera os labels no formato txt (YOLO) e constrói o arquivo descritor `data.yaml` para o treino.
+~~~powershell
+uv run --all-extras dataset-studio version build --id dataset_v1
+~~~
 
-* **Argumentos**:
-  * `--id <id>` (Obrigatório): ID da versão/release a materializar.
+A construção ocorre em staging. Depois de materializada, a versão não pode ser reconstruída no mesmo ID.
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio version build --id dataset_v1
-  ```
+### version train
 
-### `version list`
-Lista todos os conjuntos de dados (versões) materializados ou configurados no workspace.
+Visualizar a receita:
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio version list
-  ```
+~~~powershell
+uv run --all-extras dataset-studio version train --id dataset_v1 --model models\modelo.pt --epochs 50 --imgsz 640 --device auto --dry-run
+~~~
 
-### `version status`
-Exibe os dados detalhados da versão materializada (contagem de imagens de treino/validação, classes registradas, etc.).
+Executar no terminal:
 
-* **Argumentos**:
-  * `--id <id>` (Obrigatório): ID da versão.
+~~~powershell
+uv run --all-extras dataset-studio version train --id dataset_v1 --model models\modelo.pt --epochs 50 --imgsz 640 --device auto
+~~~
 
-* **Exemplo**:
-  ```bash
-  uv run dataset-studio version status --id dataset_v1
-  ```
+Parâmetros disponíveis:
 
-### `version train`
-Configura e executa (ou apenas exibe) a receita e comando CLI de treinamento do YOLO para a versão materializada do dataset.
+- --model
+- --epochs
+- --imgsz
+- --batch
+- --workers
+- --device
+- --patience
+- --lr0
+- --optimizer
+- --dry-run
 
-* **Argumentos**:
-  * `--id <id>` (Obrigatório): ID da versão materializada a treinar.
-  * `--model <modelo>` (Opcional): Modelo de partida (padrão: `yolo26n.pt`).
-  * `--epochs <int>` (Opcional): Quantidade de épocas (padrão: `50`).
-  * `--imgsz <int>` (Opcional): Resolução das imagens de treinamento (padrão: `640`).
-  * `--batch <int>` (Opcional): Batch size (padrão: `-1` para auto-batch size).
-  * `--workers <int>` (Opcional): CPU workers para carregamento de dados (padrão: `0`).
-  * `--device <device>` (Opcional): Dispositivo de hardware (padrão: `auto`).
-  * `--patience <int>` (Opcional): Limite de épocas sem melhora para early stopping (padrão: `50`).
-  * `--lr0 <float>` (Opcional): Taxa de aprendizado inicial (padrão: `0.01`).
-  * `--optimizer <opt>` (Opcional): Otimizador, como SGD, AdamW ou auto (padrão: `auto`).
-  * `--dry-run` (Opcional): Exibe o comando CLI completo do YOLO gerado com todos os parâmetros sem executá-lo fisicamente.
+Na CLI, o treinamento é síncrono. A fila sequencial, IDs exclusivos, logs persistidos e cancelamento de jobs pertencem ao fluxo web/API.
 
-* **Exemplo (Apenas visualizar comando)**:
-  ```bash
-  uv run dataset-studio version train --id dataset_v1 --model yolov8n.pt --epochs 100 --dry-run
-  ```
+## Limitações atuais da CLI
 
-* **Exemplo (Executar Treinamento no console)**:
-  ```bash
-  uv run dataset-studio version train --id dataset_v1 --model yolov8n.pt --epochs 100
-  ```
+A CLI ainda não expõe:
+
+- upload multipart isolado;
+- escolha completa dos parâmetros da extração inteligente;
+- início do Label Studio e ML Backend;
+- prévia de impacto e exclusões;
+- escolha explícita de annotation_revisions no version create.
+
+Use a API REST ou o painel web para essas operações. Não edite YAMLs ou artefatos fixados manualmente.

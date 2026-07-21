@@ -12,9 +12,9 @@ Artigos de ferramentas de software em engenharia de software e visão computacio
 - [ ] **Figura 2: Dashboard Inicial do Dataset Studio**
   - Captura de tela do painel inicial mostrando as três colunas: Campanhas (Sources), Versões Materializadas (Releases) e os Treinamentos ativos.
 - [ ] **Figura 3: O Fluxo das 4 Etapas (Acordeão)**
-  - Capturar a tela do ciclo de vida de uma campanha, exibindo o status visual de cada fase, especialmente a integração com o Label Studio e a detecção de retorno automática.
+  - Capturar a tela do ciclo de vida de uma origem, exibindo extração, fixação, integração com Label Studio e revisões aceitas explicitamente.
 - [ ] **Figura 4: Tela de Configuração do Split por Vídeo**
-  - Capturar a interface interativa de montagem da release, mostrando a calculadora em tempo real de contagem de imagens/anotações conforme os vídeos são atribuídos a `Train` ou `Val`.
+  - Capturar a montagem da versão, mostrando a calculadora enquanto os vídeos são atribuídos a `train`, `val`, `test_normal` e `test_stress`.
 - [ ] **Figura 5: Terminal de Monitoramento de Treino**
   - Print da interface que exibe as saídas de logs do YOLO executado em segundo plano de forma interativa.
 
@@ -41,7 +41,7 @@ Para dar rigor científico à seção de "Discussão e Resultados", é crucial c
   - Fazer uma revisão bibliográfica rápida e comparar o Dataset Studio com:
     - *Roboflow / V7 / CVAT (SaaS)*: O Dataset Studio é 100% local, focado em privacidade, livre de custos de API e funciona perfeitamente offline em laboratórios isolados.
     - *DVC (Data Version Control)*: O DVC gerencia blobs no Git, enquanto o Dataset Studio gerencia o ciclo completo visual de anotação, revisão e split de vídeo.
-    - *Label Studio Puro*: O Dataset Studio atua como o orquestrador que serve os dados locais, gerencia as tarefas, ativa o ML backend nativamente e monitora o resultado da rotulação automaticamente.
+    - *Label Studio Puro*: O Dataset Studio serve os dados locais, gera tarefas, ativa o ML Backend e inspeciona exportações; a criação do projeto e a importação das tasks ainda são ações realizadas no Label Studio.
 - [ ] **Equações e Formalismo Matemático**:
   - Definir matematicamente a correlação de frames consecutivos e por que a amostragem independente e identicamente distribuída ($i.i.d.$) é violada quando há correlação temporal entre quadros de um mesmo vídeo.
 - [ ] **Revisão de Terminologia**:

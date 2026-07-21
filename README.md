@@ -9,10 +9,27 @@ Ferramenta autônoma para organização, revisão, materialização de datasets 
 No terminal, acesse o diretório do repositório `dataset-studio` e execute:
 
 ```bash
-uv run dataset-studio.py
+uv sync --all-extras
+uv run --all-extras dataset-studio.py
 ```
 
+O primeiro comando instala também o Label Studio, Ultralytics e as dependências
+de desenvolvimento no ambiente isolado deste repositório. A ferramenta não usa
+o Python nem o YOLO de outros projetos. No Windows, o extra `cuda` instala os
+wheels oficiais CUDA 12.8 do PyTorch; em máquinas sem GPU, selecione `device=cpu`.
+
 A aplicação iniciará o servidor local e abrirá automaticamente o navegador na interface visual: `http://127.0.0.1:8000/`.
+
+## Ciclo de vida
+
+1. Uma **origem** recebe vídeos e uma configuração de extração.
+2. A geração de `import_tasks.json` fixa a origem.
+3. Exportações do Label Studio geram revisões independentes.
+4. Uma **versão** seleciona revisões e atribui vídeos a `train`, `val`, `test_normal` e `test_stress`.
+5. A materialização publica o dataset em `dataset/versions/<version_id>/`.
+6. A mesma versão materializada pode alimentar múltiplos treinamentos em `runs/detect/<training_id>/`.
+
+Recursos podem ser excluídos conscientemente. A interface mostra dependências, oferece cascata, permite preservar vídeos e exige confirmação digitada; o usuário pode prosseguir mesmo quando a decisão deixar dependentes inválidos.
 
 ---
 
@@ -22,7 +39,11 @@ Toda a documentação do projeto está disponível na pasta [`docs/`](docs/):
 
 1. 📖 **[Manual do Usuário](docs/USER_MANUAL.md)**: Guia passo-a-passo sobre como criar Origens de dados (`sources`), extrair frames (modo uniforme ou inteligente), integrar com o Label Studio, gerar Versões (`versions`) com splits sem vazamento de mídias e treinar modelos YOLO.
 2. 📐 **[Estrutura e Arquitetura](docs/ARCHITECTURE_AND_STRUCTURE.md)**: Mapeamento completo dos diretórios do repositório, Clean Architecture (Domínio, Aplicação, Adaptadores) e fluxo de dados no workspace (`dataset/sources/`, `dataset/versions/`, `models/`, `runs/`).
-3. 📝 **[Checklist de Documentação (TODO)](docs/DOCUMENTATION_TODO.md)**: Backlog de tarefas de documentação do projeto.
+3. 🧭 **[Tutorial End-to-End](docs/TUTORIAL_E2E.md)**: Ciclo completo com Label Studio, quatro splits e treinamento.
+4. 🌐 **[Referência da API](docs/API_REFERENCE.md)**: Rotas, payloads, exclusões e jobs.
+5. ⌨️ **[Referência da CLI](docs/CLI_REFERENCE.md)**: Comandos disponíveis e limitações atuais.
+6. 🛠️ **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Portas, CUDA, codecs, staging e recursos órfãos.
+7. 🔌 **[Guia de Adaptadores](docs/ADAPTERS_GUIDE.md)**: Contratos de predição e treinamento.
 
 ---
 
@@ -31,7 +52,7 @@ Toda a documentação do projeto está disponível na pasta [`docs/`](docs/):
 Para rodar todos os testes automatizados unitários, de caracterização e de integração:
 
 ```bash
-uv run pytest
+uv run --all-extras pytest
 ```
 
 ---

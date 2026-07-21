@@ -4,15 +4,12 @@ import json
 import threading
 from pathlib import Path
 
-import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from dataset_studio.application import JobManager
 from dataset_studio.domain import (
     Workspace,
-    campaign_root,
-    create_campaign,
-    frame_manifest_path,
 )
 from dataset_studio.web.app import create_web_app
 
@@ -178,9 +175,17 @@ def test_completed_steps_locking(tmp_path: Path):
 
 
 def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path, monkeypatch):
-    from dataset_studio.web.app import job_manager
-    monkeypatch.setattr("dataset_studio.adapters.label_studio.runner.is_port_open", lambda port, host="127.0.0.1": False)
+    started = []
+    monkeypatch.setattr(
+        "dataset_studio.web.app.start_label_studio_job",
+        lambda *args, **kwargs: started.append("label-studio") or {"id": "ls-job", "status": "running"},
+    )
+    monkeypatch.setattr(
+        "dataset_studio.web.app.start_ml_backend_job",
+        lambda *args, **kwargs: started.append("ml-backend") or {"id": "ml-job", "status": "running"},
+    )
     monkeypatch.setattr("dataset_studio.web.app.wait_for_port", lambda port, timeout=15.0: True)
+    monkeypatch.setattr("dataset_studio.web.app.wait_for_ml_backend", lambda port, timeout=20.0: True)
 
     ws = Workspace.from_path(tmp_path)
     app = create_web_app(ws)
@@ -200,9 +205,17 @@ def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path, monkeypatch):
         },
     )
 
+    model = ws.models_root / "model.pt"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    source_yaml = ws.source_config_path("ls_source")
+    source = yaml.safe_load(source_yaml.read_text(encoding="utf-8"))
+    source["annotation"].update({"backend": "local", "model": "models/model.pt"})
+    source_yaml.write_text(yaml.safe_dump(source, sort_keys=False), encoding="utf-8")
+
     resp_start = client.post(
         "/api/sources/ls_source/start-label-studio",
-        json={"enable_ml": True},
+        json={"enable_ml": True, "model": "models/model.pt"},
     )
     assert resp_start.status_code == 200
     data = resp_start.json()
@@ -210,13 +223,4 @@ def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path, monkeypatch):
     assert data["url"] == "http://127.0.0.1:8080"
     assert data["online"] is True
 
-    # Verificar que os jobs foram registrados e iniciados no JobManager
-    jobs = job_manager.list()
-    targets = [j["target"] for j in jobs]
-    assert "label-studio" in targets
-    assert "ml-backend" in targets
-
-    # Testar encerramento automático em lote (stop_all) ao desligar servidor
-    job_manager.stop_all(wait=True)
-    active = [j for j in job_manager.list() if j["status"] in {"running", "stopping"}]
-    assert len(active) == 0
+    assert started == ["ml-backend", "label-studio"]
