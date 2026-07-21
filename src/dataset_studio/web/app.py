@@ -666,36 +666,62 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     </div>
 
                     <!-- Painel de Métricas da Exportação Detectada -->
-                    <div id="finished-metrics-panel" class="hidden bg-slate-900 border border-emerald-500/40 rounded-xl p-4 space-y-3">
-                        <div class="flex justify-between items-center">
-                            <h4 class="font-bold text-emerald-400 text-sm flex items-center gap-2">
-                                <span>✓</span> Exportação Detectada e Concluída!
-                            </h4>
-                            <span id="metrics-filename" class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-1 rounded">...</span>
-                        </div>
-
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
-                                <div class="text-slate-400 text-xs">Total Imagens</div>
-                                <div class="text-xl font-bold text-indigo-300 font-mono" id="m-tasks">0</div>
+                    <div id="finished-metrics-panel" class="hidden bg-slate-900 border border-emerald-500/40 rounded-xl p-4 space-y-4">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                            <div class="space-y-1">
+                                <h4 class="font-bold text-emerald-400 text-sm flex items-center gap-2">
+                                    <span>✓</span> Exportação de Anotações Detectada!
+                                </h4>
+                                <p class="text-xs text-slate-400">Selecione qual versão do JSON exportado do Label Studio você deseja utilizar:</p>
                             </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
-                                <div class="text-slate-400 text-xs">Total Anotações</div>
-                                <div class="text-xl font-bold text-emerald-300 font-mono" id="m-boxes">0</div>
-                            </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
-                                <div class="text-slate-400 text-xs">Negativos Confirmados</div>
-                                <div class="text-xl font-bold text-amber-300 font-mono" id="m-negs">0</div>
-                            </div>
-                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
-                                <div class="text-slate-400 text-xs">Classes</div>
-                                <div class="text-xs font-bold text-purple-300 font-mono mt-1" id="m-classes">-</div>
+                            <div class="flex items-center gap-2">
+                                <select id="finished-files-select" onchange="onFinishedExportSelected()" class="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg p-2 font-mono">
+                                    <option value="">Carregando JSONs...</option>
+                                </select>
+                                <button onclick="acceptSelectedFinishedExport()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition shadow-md shadow-emerald-600/20 whitespace-nowrap">
+                                    ✓ Usar este JSON
+                                </button>
                             </div>
                         </div>
 
-                        <div class="pt-2 flex justify-end">
-                            <button onclick="createReleaseFromCampaign()" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-purple-600/30 transition">
-                                📦 Seguir para Criar Release &rarr;
+                        <!-- Cards de Métricas em Tempo Real do JSON Selecionado -->
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
+                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
+                                <div class="text-slate-400 text-[11px] font-medium">📷 Total Imagens</div>
+                                <div class="text-lg font-bold text-indigo-300 font-mono mt-1" id="m-tasks">0</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/60 rounded-lg border border-emerald-500/30">
+                                <div class="text-emerald-400 text-[11px] font-medium">✓ Anotadas</div>
+                                <div class="text-lg font-bold text-emerald-300 font-mono mt-1" id="m-completed">0</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/60 rounded-lg border border-amber-500/30">
+                                <div class="text-amber-400 text-[11px] font-medium">⏳ Não Anotadas</div>
+                                <div class="text-lg font-bold text-amber-300 font-mono mt-1" id="m-deferred">0</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/60 rounded-lg border border-rose-500/30">
+                                <div class="text-rose-400 text-[11px] font-medium">🚫 Canceladas</div>
+                                <div class="text-lg font-bold text-rose-300 font-mono mt-1" id="m-cancelled">0</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
+                                <div class="text-slate-400 text-[11px] font-medium">📦 Caixas de Anotação</div>
+                                <div class="text-lg font-bold text-indigo-200 font-mono mt-1" id="m-boxes">0</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/60 rounded-lg border border-slate-700/60">
+                                <div class="text-slate-400 text-[11px] font-medium">⚪ Negativos</div>
+                                <div class="text-lg font-bold text-slate-300 font-mono mt-1" id="m-negs">0</div>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-slate-800/40 rounded-lg border border-slate-800 flex items-center justify-between text-xs">
+                            <span class="text-slate-400 font-medium">🏷️ Contagem por Classe:</span>
+                            <span class="font-bold text-purple-300 font-mono" id="m-classes">-</span>
+                        </div>
+
+                        <div class="pt-2 flex justify-between items-center">
+                            <span id="active-revision-badge" class="text-xs text-slate-400 font-mono"></span>
+                            <button onclick="createReleaseFromCampaign()" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-purple-600/30 transition flex items-center gap-1">
+                                <span>📦 Seguir para Criar Release</span>
+                                <span>&rarr;</span>
                             </button>
                         </div>
                     </div>
@@ -852,6 +878,56 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
         }
 
+        let currentFinishedInfo = null;
+
+        function renderExportMetrics(metrics) {
+            if (!metrics) return;
+            document.getElementById('m-tasks').innerText = metrics.total_tasks || 0;
+            document.getElementById('m-completed').innerText = metrics.tasks_completed || 0;
+            document.getElementById('m-deferred').innerText = metrics.tasks_deferred || 0;
+            document.getElementById('m-cancelled').innerText = metrics.tasks_cancelled || 0;
+            document.getElementById('m-boxes').innerText = metrics.total_boxes || 0;
+            document.getElementById('m-negs').innerText = metrics.confirmed_negatives || 0;
+
+            const clsEntries = Object.entries(metrics.class_counts || {});
+            document.getElementById('m-classes').innerText = clsEntries.length > 0
+                ? clsEntries.map(([k, v]) => `${k}: ${v}`).join(', ')
+                : 'Nenhuma caixa registrada';
+        }
+
+        function onFinishedExportSelected() {
+            const sel = document.getElementById('finished-files-select');
+            const selectedPath = sel ? sel.value : null;
+            if (!currentFinishedInfo || !currentFinishedInfo.exports) return;
+            const item = currentFinishedInfo.exports.find(e => e.path === selectedPath);
+            if (item && item.metrics) {
+                renderExportMetrics(item.metrics);
+            }
+        }
+
+        async function acceptSelectedFinishedExport() {
+            const sel = document.getElementById('finished-files-select');
+            const selectedPath = sel ? sel.value : null;
+            if (!selectedPath) {
+                alert('Selecione um arquivo JSON exportado.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/campaigns/${campaignId}/accept-export`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: selectedPath, allow_pending: true })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Erro ao aceitar o JSON selecionado.');
+                alert('Versão das anotações aceita e registrada para a Release!');
+                loadCampaignDetails();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
         function createReleaseFromCampaign() {
             const relId = `release_${campaignId}`;
             window.location.href = `/release.html?campaign=${campaignId}&id=${relId}`;
@@ -963,23 +1039,37 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
                 // finished_tasks info
                 const fin = st.finished_info || {};
+                currentFinishedInfo = fin;
                 document.getElementById('finished-tasks-path').innerText = fin.finished_tasks_dir || `campaigns/${campaignId}/label_studio/finished_tasks`;
 
-                if (fin.found) {
+                if (fin.found && fin.exports && fin.exports.length > 0) {
                     document.getElementById('step-4-status').className = "text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-md";
                     document.getElementById('step-4-status').innerText = "✓ Concluído";
                     document.getElementById('finished-metrics-panel').classList.remove('hidden');
-                    document.getElementById('metrics-filename').innerText = fin.latest_file.name;
 
-                    const m = fin.metrics || {};
-                    document.getElementById('m-tasks').innerText = m.total_tasks || 0;
-                    document.getElementById('m-boxes').innerText = m.total_boxes || 0;
-                    document.getElementById('m-negs').innerText = m.confirmed_negatives || 0;
+                    const selExport = document.getElementById('finished-files-select');
+                    if (selExport) {
+                        const previousValue = selExport.value;
+                        selExport.innerHTML = fin.exports.map(exp => {
+                            const boxes = exp.metrics ? (exp.metrics.total_boxes || 0) : 0;
+                            const completed = exp.metrics ? (exp.metrics.tasks_completed || 0) : 0;
+                            const deferred = exp.metrics ? (exp.metrics.tasks_deferred || 0) : 0;
+                            const cancelled = exp.metrics ? (exp.metrics.tasks_cancelled || 0) : 0;
+                            const label = exp.error ? `${exp.name} (Erro)` : `${exp.name} (${completed} anotadas, ${deferred} pendentes, ${cancelled} canceladas, ${boxes} caixas)`;
+                            return `<option value="${escapeHtml(exp.path)}">${escapeHtml(label)}</option>`;
+                        }).join('');
+                        if (previousValue && fin.exports.some(e => e.path === previousValue)) {
+                            selExport.value = previousValue;
+                        }
+                    }
 
-                    const clsEntries = Object.entries(m.class_counts || {});
-                    document.getElementById('m-classes').innerText = clsEntries.length > 0
-                        ? clsEntries.map(([k, v]) => `${k}: ${v}`).join(', ')
-                        : 'Nenhuma caixa';
+                    onFinishedExportSelected();
+
+                    const activeRev = st.latest_annotation_revision || (st.annotation_revisions && st.annotation_revisions.length > 0 ? st.annotation_revisions[st.annotation_revisions.length - 1].revision_id : null);
+                    const activeBadge = document.getElementById('active-revision-badge');
+                    if (activeBadge) {
+                        activeBadge.innerText = activeRev ? `Revisão Ativa para Release: ${activeRev}` : '';
+                    }
                 }
 
                 // Carregar Modelos para dropdowns
@@ -1471,7 +1561,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 )
                 wait_for_port(9090, timeout=8.0)
 
-            online = wait_for_port(8080, timeout=10.0)
+            online = wait_for_port(8080, timeout=15.0)
             return {
                 "status": "ok",
                 "online": online,
@@ -1486,14 +1576,19 @@ def create_web_app(workspace: Workspace) -> FastAPI:
     @app.post("/api/campaigns/{source_id}/accept-export")
     def api_accept_export(source_id: str, req: ExportAcceptReq):
         try:
+            target_path = Path(req.path)
+            revision_id = req.revision_id
+            if not revision_id:
+                clean_stem = re.sub(r"[^A-Za-z0-9_-]", "_", target_path.stem)
+                revision_id = f"rev_{clean_stem}"
             accepted, report = accept_native_export(
                 workspace,
                 source_id,
-                Path(req.path),
-                revision_id=req.revision_id,
+                target_path,
+                revision_id=revision_id,
                 allow_pending=req.allow_pending,
             )
-            return {"status": "ok", "accepted": str(accepted), "report": str(report)}
+            return {"status": "ok", "accepted": str(accepted), "report": str(report), "revision_id": revision_id}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 

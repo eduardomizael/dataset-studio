@@ -177,8 +177,10 @@ def test_completed_steps_locking(tmp_path: Path):
     assert "já foi concluída" in resp_imp.json()["detail"]
 
 
-def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path):
+def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path, monkeypatch):
     from dataset_studio.web.app import job_manager
+    monkeypatch.setattr("dataset_studio.adapters.label_studio.runner.is_port_open", lambda port, host="127.0.0.1": False)
+    monkeypatch.setattr("dataset_studio.web.app.wait_for_port", lambda port, timeout=15.0: True)
 
     ws = Workspace.from_path(tmp_path)
     app = create_web_app(ws)

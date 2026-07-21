@@ -248,6 +248,15 @@ def parse_native_export(
         video_stats["boxes"] += len(rows)
         video_stats["confirmed_negatives" if not rows else "positive_frames"] += 1
     deferred = exclusion_reasons["deferred"]
+    class_counts: Counter[str] = Counter()
+    for frame_obj in parsed.values():
+        for box_str in frame_obj.boxes:
+            parts = box_str.split()
+            if parts:
+                cls_idx = int(parts[0])
+                cls_name = class_names[cls_idx] if cls_idx < len(class_names) else str(cls_idx)
+                class_counts[cls_name] += 1
+
     report = {
         "schema_version": 1,
         "campaign_id": campaign_id,
@@ -264,6 +273,7 @@ def parse_native_export(
         "boxes": box_count,
         "positive_frames": len(parsed) - excluded - negatives,
         "confirmed_negatives": negatives,
+        "class_counts": dict(sorted(class_counts.items())),
         "allow_pending": allow_pending,
         "snapshot_type": "provisional" if deferred else "complete",
         "per_video": {

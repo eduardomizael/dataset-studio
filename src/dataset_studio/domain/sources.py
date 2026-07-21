@@ -27,6 +27,13 @@ def sources_root(defaults_or_ws: dict[str, Any] | Workspace) -> Path:
     return p if p.is_absolute() else p.resolve()
 
 
+def workspace_root(defaults_or_ws: dict[str, Any] | Workspace) -> Path:
+    """Retorna o diretório raiz do workspace."""
+    if isinstance(defaults_or_ws, Workspace):
+        return defaults_or_ws.root
+    return sources_root(defaults_or_ws).parent.parent
+
+
 
 def source_root(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> Path:
     return sources_root(defaults_or_ws) / source_id
@@ -427,14 +434,14 @@ def build_import_tasks(defaults_or_ws: dict[str, Any] | Workspace, source_id: st
     source = load_source(defaults_or_ws, source_id)
     manifest = load_frame_manifest(defaults_or_ws, source_id)
     root = source_root(defaults_or_ws, source_id)
-    dataset_root = sources_root(defaults_or_ws).parent
+    ws_root = workspace_root(defaults_or_ws)
     class_names = list(source["annotation"]["classes"])
     tasks = []
     for frame in manifest["frames"]:
         image_path = root / "frames" / "raw" / "images" / frame["image"]
         if not image_path.exists():
             raise WorkflowError(f"Imagem do manifesto nao encontrada: {image_path}")
-        relative = image_path.resolve().relative_to(dataset_root.resolve()).as_posix()
+        relative = image_path.resolve().relative_to(ws_root.resolve()).as_posix()
         results = [
             yolo_prediction_to_ls(
                 prediction, frame=frame, class_names=class_names, index=index

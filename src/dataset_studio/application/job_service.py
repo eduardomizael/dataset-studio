@@ -33,6 +33,7 @@ class JobManager:
         kind: str,
         target: str,
         cwd: Path | None = None,
+        env: dict[str, str] | None = None,
         cooperative_stop: bool = False,
         metadata: dict[str, Any] | None = None,
         log_path: Path | None = None,
@@ -60,6 +61,7 @@ class JobManager:
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

@@ -31,29 +31,56 @@ def inspect_finished_tasks(ws: Workspace, source_id: str) -> dict[str, Any]:
     finished_dir.mkdir(parents=True, exist_ok=True)
     json_files = sorted(finished_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not json_files:
-        return {"found": False, "files": [], "finished_tasks_dir": str(finished_dir)}
+        return {"found": False, "files": [], "exports": [], "finished_tasks_dir": str(finished_dir)}
 
+    exports = []
+    for file in json_files:
+        try:
+            insp = inspect_native_export(ws, source_id, file, allow_pending=True)
+            rep = insp.get("report") or {}
+            exports.append(
+                {
+                    "name": file.name,
+                    "path": str(file),
+                    "mtime": file.stat().st_mtime,
+                    "size": file.stat().st_size,
+                    "valid": insp.get("valid", False),
+                    "metrics": {
+                        "total_tasks": rep.get("tasks_valid", rep.get("tasks_expected", 0)),
+                        "tasks_completed": rep.get("tasks_completed", 0),
+                        "tasks_deferred": rep.get("tasks_deferred", 0),
+                        "tasks_cancelled": rep.get("exclusion_reasons", {}).get("skipped_or_cancelled", 0),
+                        "tasks_excluded": rep.get("tasks_excluded", 0),
+                        "positive_frames": rep.get("positive_frames", 0),
+                        "confirmed_negatives": rep.get("confirmed_negatives", 0),
+                        "total_boxes": rep.get("boxes", 0),
+                        "class_counts": rep.get("class_counts", {}),
+                        "snapshot_type": rep.get("snapshot_type", "complete"),
+                        "per_video": rep.get("per_video", {}),
+                    },
+                }
+            )
+        except Exception as exc:
+            exports.append(
+                {
+                    "name": file.name,
+                    "path": str(file),
+                    "error": str(exc),
+                }
+            )
+
+    latest_export = exports[0] if exports else None
     latest_file = json_files[0]
-    report = inspect_native_export(ws, source_id, latest_file, allow_pending=True)
-
     return {
         "found": True,
         "finished_tasks_dir": str(finished_dir),
         "files": [f.name for f in json_files],
+        "exports": exports,
         "latest_file": {
             "name": latest_file.name,
             "path": str(latest_file),
         },
-        "metrics": {
-            "total_tasks": report.get("included_frames", 0) + report.get("excluded_frames", 0),
-            "included_frames": report.get("included_frames", 0),
-            "excluded_frames": report.get("excluded_frames", 0),
-            "confirmed_negatives": report.get("confirmed_negatives", 0),
-            "positive_frames": report.get("positive_frames", 0),
-            "total_boxes": report.get("boxes", 0),
-            "class_counts": report.get("class_counts", {}),
-            "per_video": report.get("per_video", {}),
-        },
+        "metrics": latest_export.get("metrics", {}) if (latest_export and "metrics" in latest_export) else {},
     }
 
 
