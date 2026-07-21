@@ -66,6 +66,7 @@ def create_source(
     videos_dir: Path,
     video_pattern: str,
     video_files: list[str] | None = None,
+    video_notes: dict[str, str] | None = None,
     extraction: dict[str, Any] | None = None,
     annotation: dict[str, Any] | None = None,
 ) -> Path:
@@ -205,6 +206,7 @@ def create_source(
                     "size": video.stat().st_size,
                     "mtime_ns": video.stat().st_mtime_ns,
                     "sha256": sha256(video),
+                    "note": (video_notes or {}).get(video.name, ""),
                 }
                 for video in videos
             ],
@@ -473,10 +475,19 @@ def build_import_tasks(defaults_or_ws: dict[str, Any] | Workspace, source_id: st
     return output
 
 
+def delete_source(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> None:
+    """Remove completamente a pasta da origem de dados do disco."""
+    root = source_root(defaults_or_ws, source_id)
+    if not root.exists():
+        raise WorkflowError(f"Origem não encontrada: {source_id}")
+    shutil.rmtree(root, ignore_errors=False)
+
+
 # Aliases de retrocompatibilidade para campaign -> source
 campaigns_root = sources_root
 campaign_root = source_root
 campaign_config_path = source_config_path
 list_campaigns = list_sources
 create_campaign = create_source
+delete_campaign = delete_source
 load_campaign = load_source

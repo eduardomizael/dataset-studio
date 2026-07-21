@@ -150,9 +150,12 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
     video_details = []
     for v_item in source["videos"].get("files", []):
         v_name = v_item["name"] if isinstance(v_item, dict) else str(v_item)
+        v_note = v_item.get("note", "") if isinstance(v_item, dict) else ""
         v_path = videos_dir / v_name
         fallback_size = v_item.get("size", 0) if isinstance(v_item, dict) else 0
-        video_details.append(get_video_info(v_path, fallback_size=fallback_size))
+        info = get_video_info(v_path, fallback_size=fallback_size)
+        info["note"] = v_note
+        video_details.append(info)
 
     return {
         "source_id": source_id,

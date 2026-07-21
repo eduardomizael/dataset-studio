@@ -30,16 +30,16 @@ def preview_split_metrics(
     revisions = list_annotation_revisions(ws, source_id)
     target_rev = revision_id or (revisions[-1] if revisions else None)
     if not target_rev:
+        empty_split = {"videos": 0, "frames": 0, "boxes": 0}
         return {
-            "train": {"videos": 0, "frames": 0, "boxes": 0},
-            "val": {"videos": 0, "frames": 0, "boxes": 0},
+            "train": empty_split,
+            "val": empty_split,
+            "test_normal": empty_split,
+            "test_stress": empty_split,
         }
 
     report = load_annotation_revision_report(ws, source_id, target_rev)
     per_video = report.get("per_video", {})
-
-    train_v = assignments.get("train", [])
-    val_v = assignments.get("val", [])
 
     def sum_metrics(v_list: list[str]) -> dict[str, int]:
         total_f = 0
@@ -47,13 +47,15 @@ def preview_split_metrics(
         for item in v_list:
             v_name = item.split("/")[-1] if "/" in item else item
             v_data = per_video.get(v_name, {})
-            total_f += v_data.get("included", 0)
+            total_f += v_data.get("included", v_data.get("completed", 0))
             total_b += v_data.get("boxes", 0)
         return {"videos": len(v_list), "frames": total_f, "boxes": total_b}
 
     return {
-        "train": sum_metrics(train_v),
-        "val": sum_metrics(val_v),
+        "train": sum_metrics(assignments.get("train", [])),
+        "val": sum_metrics(assignments.get("val", [])),
+        "test_normal": sum_metrics(assignments.get("test_normal", [])),
+        "test_stress": sum_metrics(assignments.get("test_stress", [])),
     }
 
 

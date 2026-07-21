@@ -12,6 +12,7 @@ from typing import Any
 from dataset_studio.domain.annotations import parse_native_export
 from dataset_studio.domain.sources import (
     annotation_source_paths,
+    list_annotation_revisions,
     load_annotation_revision_report,
     load_frame_manifest,
     load_source,
@@ -110,11 +111,14 @@ def create_version(
         if list(source["annotation"]["classes"]) != defaults_classes:
             raise WorkflowError(f"Classes divergentes na origem: {src_id}")
 
-        revision_id = (
-            annotation_revisions.get(src_id)
-            if annotation_revisions is not None
-            else "legacy"
-        )
+        revs = list_annotation_revisions(defaults_or_ws, src_id)
+        if annotation_revisions is not None and annotation_revisions.get(src_id):
+            revision_id = annotation_revisions[src_id]
+        elif revs:
+            revision_id = revs[-1]
+        else:
+            revision_id = "legacy"
+
         if not revision_id:
             raise WorkflowError(
                 f"Selecione uma revisao de anotacao para {src_id}."
@@ -297,11 +301,26 @@ def build_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -
     return manifest_path
 
 
+def delete_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) -> None:
+    """Remove completamente a pasta da versão/release de dataset e treinos associados do disco."""
+    root = version_root(defaults_or_ws, version_id)
+    if root.exists():
+        shutil.rmtree(root, ignore_errors=False)
+
+    # Remove pasta de treinamentos associada em runs/detect/<version_id> se existir
+    if isinstance(defaults_or_ws, Workspace):
+        runs_dir = defaults_or_ws.root / "runs" / "detect" / version_id
+        if runs_dir.exists():
+            shutil.rmtree(runs_dir, ignore_errors=True)
+
+
 # Aliases de retrocompatibilidade para release -> version
 releases_root = versions_root
 release_root = version_root
 release_config_path = version_config_path
 list_releases = list_versions
+create_release = create_version
+delete_release = delete_version
 campaign_video_keys = source_video_keys
 create_release = create_version
 build_release = build_version
