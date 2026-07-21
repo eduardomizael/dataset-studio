@@ -23,6 +23,7 @@ htmlcov/
 workspace/
 *.log
 
+config/*
 dataset/*
 !dataset/.gitkeep
 models/*
