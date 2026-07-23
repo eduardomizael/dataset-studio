@@ -1,0 +1,36 @@
+schema_version: 1
+dataset_id: release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484
+kind: materialized_version
+version_id: release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484
+sources:
+- canaleta_pvc_260717
+annotation_revisions:
+  canaleta_pvc_260717: rev_project-2-at-2026-07-23-09-50-91cd7484
+provisional: true
+images: 776
+boxes: 5649
+excluded_frames: 101
+splits:
+  train: 466
+  test_stress: 53
+  val: 104
+  test_normal: 153
+manifest_sha256: f9d059511607d92d7e9a4d1dd68d182b5d3e9949bcafc125be8c2f2320f2f192
+version_config_sha256: 9c3bd590c557ce55037f28f09bc588dfcbe4d7b70e1b9ee2e156932426e5b2d8
+paths:
+  version: dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/version.yaml
+  manifest: dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/manifest.csv
+  data: dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/data.yaml
+  build_report: dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/build_report.json
+canonical_manifest:
+  path: dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/version.yaml
+  sha256: 9c3bd590c557ce55037f28f09bc588dfcbe4d7b70e1b9ee2e156932426e5b2d8
+provenance:
+  origin: generated
+  confidence: confirmed
+  reconstructed_at: null
+  evidence:
+  - dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/version.yaml
+  - dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/build_report.json
+  - dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/manifest.csv
+  - dataset/versions/release_canaleta_pvc_260717_project-2-at-2026-07-23-09-50-91cd7484/data.yaml
