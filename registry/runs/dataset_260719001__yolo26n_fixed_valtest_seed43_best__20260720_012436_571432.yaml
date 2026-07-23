@@ -1,0 +1,43 @@
+schema_version: 1
+run_id: dataset_260719001__yolo26n_fixed_valtest_seed43_best__20260720_012436_571432
+legacy_name: dataset_260719001__yolo26n_fixed_valtest_seed43_best__20260720_012436_571432
+status: completed
+state: candidate
+created_at: '2026-07-23T14:36:31.176531+00:00'
+started_at: null
+completed_at: '2026-07-23T14:45:04.858906+00:00'
+dataset_id: ds-d04-r260719001
+initial_model_id: model-y26n-d03fixed-s43-best
+initial_model_sha256: 2ba3458e01e0138b4e90555e922f618e218ee5c852191d6d5e5b63991d06c7c5
+output_model_id: model-y26n-d04r001-s42-best
+training:
+  model: models/yolo26n_fixed_valtest_seed43_best.pt
+  epochs: 50
+  imgsz: 640
+  batch: 12
+  seed: 42
+  patience: 20
+  cos_lr: true
+  close_mosaic: 5
+  flipud: 0.3
+metrics:
+  completed_epochs: 50
+  best_epoch: 43
+  best:
+    precision: 0.99217
+    recall: 0.95652
+    map50: 0.99031
+    map50_95: 0.89548
+artifacts:
+  best:
+    path: C:\Users\eduar\Desktop\fish_detection\models\yolo26n_dataset_260719001_partial_best.pt
+    sha256: 5ffb5447d21bb108296414675cbaf6a05b367afa1ec622878a9fa0f90e4e1d20
+git_commit: null
+provenance:
+  origin: reconstructed
+  confidence: confirmed
+  reconstructed_at: '2026-07-23T14:45:04.843078+00:00'
+  evidence:
+  - C:\Users\eduar\Desktop\fish_detection\docs\historico_treinamentos_modelos.md
+  - C:\Users\eduar\Desktop\fish_detection\models\yolo26n_dataset_260719001_partial_best.pt
+  - C:\Users\eduar\Desktop\fish_detection\runs\experiments\20260720_new_model_video_eval\comparison.md

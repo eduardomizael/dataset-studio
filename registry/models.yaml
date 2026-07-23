@@ -1,0 +1,622 @@
+schema_version: 1
+models:
+  model-release_canaleta_pvc_260717_export_selected2-best:
+    model_id: model-release_canaleta_pvc_260717_export_selected2-best
+    architecture: yolo26n_fixed_valtest_seed43_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: ed6d809568c095f341c85462c39034cccb6ebc7c623b39206ac7a4ab72c63f75
+    paths:
+    - runs/detect/release_canaleta_pvc_260717_export_selected2/weights/best.pt
+    parent_model_id: model-y26n-d03fixed-s43-best
+    source_run_id: release_canaleta_pvc_260717_export_selected2
+    dataset_id: ds-d04-r260719001
+    created_at: '2026-07-23T14:36:31.209687+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/release_canaleta_pvc_260717_export_selected2/args.yaml
+      - runs/detect/release_canaleta_pvc_260717_export_selected2/results.csv
+      - runs/detect/release_canaleta_pvc_260717_export_selected2/weights/best.pt
+      - runs/detect/release_canaleta_pvc_260717_export_selected2/weights/last.pt
+  model-stat_e100_seed_42-best:
+    model_id: model-stat_e100_seed_42-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 09ca01cf91b3b0c033b95b9281616a0c2ecea90887c83895ee110fe79921fb5f
+    paths:
+    - runs/detect/stat_e100_seed_42/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_e100_seed_42
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:31.269470+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_e100_seed_42/args.yaml
+      - runs/detect/stat_e100_seed_42/results.csv
+      - runs/detect/stat_e100_seed_42/weights/best.pt
+      - runs/detect/stat_e100_seed_42/weights/last.pt
+  model-stat_e100_seed_43-best:
+    model_id: model-stat_e100_seed_43-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: d6b613020241e825f9b896e5ee1748e4bb8d6cc11e1bfc782e0f684b62600608
+    paths:
+    - runs/detect/stat_e100_seed_43/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_e100_seed_43
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:31.319884+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_e100_seed_43/args.yaml
+      - runs/detect/stat_e100_seed_43/results.csv
+      - runs/detect/stat_e100_seed_43/weights/best.pt
+      - runs/detect/stat_e100_seed_43/weights/last.pt
+  model-stat_e100_seed_44-best:
+    model_id: model-stat_e100_seed_44-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 51f0af06be902b492dd307187445a2cf8fc9241bc28831a4e10e5ae082e94cb5
+    paths:
+    - runs/detect/stat_e100_seed_44/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_e100_seed_44
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:31.375015+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_e100_seed_44/args.yaml
+      - runs/detect/stat_e100_seed_44/results.csv
+      - runs/detect/stat_e100_seed_44/weights/best.pt
+      - runs/detect/stat_e100_seed_44/weights/last.pt
+  model-stat_e100_seed_45-best:
+    model_id: model-stat_e100_seed_45-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: afb10fb08700fce9527df2a8344b2a9f10efe70662c9ea691cf810ad391b13cd
+    paths:
+    - runs/detect/stat_e100_seed_45/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_e100_seed_45
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:31.431901+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_e100_seed_45/args.yaml
+      - runs/detect/stat_e100_seed_45/results.csv
+      - runs/detect/stat_e100_seed_45/weights/best.pt
+      - runs/detect/stat_e100_seed_45/weights/last.pt
+  model-stat_e100_seed_46-best:
+    model_id: model-stat_e100_seed_46-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 5f68f4b461bcc8a7fef82cc4be368f5beeab49585e68fa40ab5aedc77b22423c
+    paths:
+    - runs/detect/stat_e100_seed_46/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_e100_seed_46
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:31.486499+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_e100_seed_46/args.yaml
+      - runs/detect/stat_e100_seed_46/results.csv
+      - runs/detect/stat_e100_seed_46/weights/best.pt
+      - runs/detect/stat_e100_seed_46/weights/last.pt
+  model-stat_fixed_e150_b16_seed_42-best:
+    model_id: model-stat_fixed_e150_b16_seed_42-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 4c14b90725fb1138c1303068c4f62da0997e2c5ea4030b6e28073f0708b55a82
+    paths:
+    - runs/detect/stat_fixed_e150_b16_seed_42/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_fixed_e150_b16_seed_42
+    dataset_id: ds-d03-fixed-test
+    created_at: '2026-07-23T14:36:31.546176+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: probable
+      evidence:
+      - runs/detect/stat_fixed_e150_b16_seed_42/args.yaml
+      - runs/detect/stat_fixed_e150_b16_seed_42/results.csv
+      - runs/detect/stat_fixed_e150_b16_seed_42/weights/best.pt
+      - runs/detect/stat_fixed_e150_b16_seed_42/weights/last.pt
+  model-stat_fixed_e150_b16_seed_43-best:
+    model_id: model-stat_fixed_e150_b16_seed_43-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: c1a5e720cda74f981974905ab51577f8180c8d147ca6f571497d5b25b98cfe98
+    paths:
+    - runs/detect/stat_fixed_e150_b16_seed_43/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_fixed_e150_b16_seed_43
+    dataset_id: ds-d03-fixed-test
+    created_at: '2026-07-23T14:36:31.605436+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: probable
+      evidence:
+      - runs/detect/stat_fixed_e150_b16_seed_43/args.yaml
+      - runs/detect/stat_fixed_e150_b16_seed_43/results.csv
+      - runs/detect/stat_fixed_e150_b16_seed_43/weights/best.pt
+      - runs/detect/stat_fixed_e150_b16_seed_43/weights/last.pt
+  model-stat_fixed_e150_b16_seed_44-best:
+    model_id: model-stat_fixed_e150_b16_seed_44-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 23d34311b5514a2f9fd51964cdf37b9e22d646033d146633781ac5169bfbec20
+    paths:
+    - runs/detect/stat_fixed_e150_b16_seed_44/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_fixed_e150_b16_seed_44
+    dataset_id: ds-d03-fixed-test
+    created_at: '2026-07-23T14:36:31.669404+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: probable
+      evidence:
+      - runs/detect/stat_fixed_e150_b16_seed_44/args.yaml
+      - runs/detect/stat_fixed_e150_b16_seed_44/results.csv
+      - runs/detect/stat_fixed_e150_b16_seed_44/weights/best.pt
+      - runs/detect/stat_fixed_e150_b16_seed_44/weights/last.pt
+  model-stat_fixed_e150_b16_seed_45-best:
+    model_id: model-stat_fixed_e150_b16_seed_45-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 22208895ebaf7d2af581d0de86114a6f8bdfb24c53b260d3eaa3f58d6e31ce0d
+    paths:
+    - runs/detect/stat_fixed_e150_b16_seed_45/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_fixed_e150_b16_seed_45
+    dataset_id: ds-d03-fixed-test
+    created_at: '2026-07-23T14:36:31.729927+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: probable
+      evidence:
+      - runs/detect/stat_fixed_e150_b16_seed_45/args.yaml
+      - runs/detect/stat_fixed_e150_b16_seed_45/results.csv
+      - runs/detect/stat_fixed_e150_b16_seed_45/weights/best.pt
+      - runs/detect/stat_fixed_e150_b16_seed_45/weights/last.pt
+  model-stat_fixed_e150_b16_seed_46-best:
+    model_id: model-stat_fixed_e150_b16_seed_46-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 996fe094ff8c4fe72919ea0c548a3e421321a4799c6412b539d11789a30ca4a2
+    paths:
+    - runs/detect/stat_fixed_e150_b16_seed_46/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_fixed_e150_b16_seed_46
+    dataset_id: ds-d03-fixed-test
+    created_at: '2026-07-23T14:36:31.806801+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: probable
+      evidence:
+      - runs/detect/stat_fixed_e150_b16_seed_46/args.yaml
+      - runs/detect/stat_fixed_e150_b16_seed_46/results.csv
+      - runs/detect/stat_fixed_e150_b16_seed_46/weights/best.pt
+      - runs/detect/stat_fixed_e150_b16_seed_46/weights/last.pt
+  model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_42-best:
+    model_id: model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_42-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: experimental
+    sha256: e67bceacc377771089a951427a532855ec7813689807be7a672806020373cb58
+    paths:
+    - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_42/weights/best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: stat_fixed_valtest_yolo26n_base_e150_b16_seed_42
+    dataset_id: ds-d03-fixed-valtest
+    created_at: '2026-07-23T14:36:31.869384+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_42/args.yaml
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_42/results.csv
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_42/weights/best.pt
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_42/weights/last.pt
+  model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_44-best:
+    model_id: model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_44-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: experimental
+    sha256: 57faadc1b0469e5f41ba600955148e194ab37fbf3e2b75f3700b2ed571bec23d
+    paths:
+    - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_44/weights/best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: stat_fixed_valtest_yolo26n_base_e150_b16_seed_44
+    dataset_id: ds-d03-fixed-valtest
+    created_at: '2026-07-23T14:36:32.002736+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_44/args.yaml
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_44/results.csv
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_44/weights/best.pt
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_44/weights/last.pt
+  model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_45-best:
+    model_id: model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_45-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: experimental
+    sha256: 34ac0640d3c5fd826ccadc4b91cdf5cc750115f6a8fac0b684d95e8e9dedf72f
+    paths:
+    - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_45/weights/best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: stat_fixed_valtest_yolo26n_base_e150_b16_seed_45
+    dataset_id: ds-d03-fixed-valtest
+    created_at: '2026-07-23T14:36:32.073455+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_45/args.yaml
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_45/results.csv
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_45/weights/best.pt
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_45/weights/last.pt
+  model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_46-best:
+    model_id: model-stat_fixed_valtest_yolo26n_base_e150_b16_seed_46-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: experimental
+    sha256: d4e1fc88aeeeb58b6d805a4151edc8375ca4f8c3466ac4469b3c807a7ec540f9
+    paths:
+    - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_46/weights/best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: stat_fixed_valtest_yolo26n_base_e150_b16_seed_46
+    dataset_id: ds-d03-fixed-valtest
+    created_at: '2026-07-23T14:36:32.150246+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_46/args.yaml
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_46/results.csv
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_46/weights/best.pt
+      - runs/detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_46/weights/last.pt
+  model-stat_fixed_yolo26n_base_e150_b16_seed_42-best:
+    model_id: model-stat_fixed_yolo26n_base_e150_b16_seed_42-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: experimental
+    sha256: 85602e78fdfb5f724c305a35d709e546ba1e3c5b19b743ba6571e1d9054abb3a
+    paths:
+    - runs/detect/stat_fixed_yolo26n_base_e150_b16_seed_42/weights/best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: stat_fixed_yolo26n_base_e150_b16_seed_42
+    dataset_id: ds-d03-fixed-test
+    created_at: '2026-07-23T14:36:32.251108+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: probable
+      evidence:
+      - runs/detect/stat_fixed_yolo26n_base_e150_b16_seed_42/args.yaml
+      - runs/detect/stat_fixed_yolo26n_base_e150_b16_seed_42/results.csv
+      - runs/detect/stat_fixed_yolo26n_base_e150_b16_seed_42/weights/best.pt
+      - runs/detect/stat_fixed_yolo26n_base_e150_b16_seed_42/weights/last.pt
+  model-stat_seed_42-best:
+    model_id: model-stat_seed_42-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: d7e3624d4a9346d470bcef75bc872c4a11ccf8a127128f3240a656d450ee7ad7
+    paths:
+    - runs/detect/stat_seed_42/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_seed_42
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:32.361253+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_seed_42/args.yaml
+      - runs/detect/stat_seed_42/results.csv
+      - runs/detect/stat_seed_42/weights/best.pt
+      - runs/detect/stat_seed_42/weights/last.pt
+  model-stat_w0_seed_42-best:
+    model_id: model-stat_w0_seed_42-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 755286220ed8e959a31e7ef5737f13f1e59b676cb11d636b7aff21e5b8143e74
+    paths:
+    - runs/detect/stat_w0_seed_42/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_w0_seed_42
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:32.435084+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_w0_seed_42/args.yaml
+      - runs/detect/stat_w0_seed_42/results.csv
+      - runs/detect/stat_w0_seed_42/weights/best.pt
+      - runs/detect/stat_w0_seed_42/weights/last.pt
+  model-stat_w0_seed_44-best:
+    model_id: model-stat_w0_seed_44-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: 378b0fbbe5848e026e4e3543f41d1dc195835b078638708845e67317d664394c
+    paths:
+    - runs/detect/stat_w0_seed_44/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_w0_seed_44
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:32.594649+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_w0_seed_44/args.yaml
+      - runs/detect/stat_w0_seed_44/results.csv
+      - runs/detect/stat_w0_seed_44/weights/best.pt
+      - runs/detect/stat_w0_seed_44/weights/last.pt
+  model-stat_w0_seed_45-best:
+    model_id: model-stat_w0_seed_45-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: a098611a8a09d9e2d1ecdebe7f37f4d93236511c470f6dcce712fb4c17cbc5ce
+    paths:
+    - runs/detect/stat_w0_seed_45/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_w0_seed_45
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:32.667406+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_w0_seed_45/args.yaml
+      - runs/detect/stat_w0_seed_45/results.csv
+      - runs/detect/stat_w0_seed_45/weights/best.pt
+      - runs/detect/stat_w0_seed_45/weights/last.pt
+  model-stat_w0_seed_46-best:
+    model_id: model-stat_w0_seed_46-best
+    architecture: yolo26n_best
+    role: trained_checkpoint
+    state: experimental
+    sha256: e04f1fb1e91635efe5f09d2335f68728d5e75ed11324bf0b7630c9f1daf16e18
+    paths:
+    - runs/detect/stat_w0_seed_46/weights/best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_w0_seed_46
+    dataset_id: ds-d03-variable
+    created_at: '2026-07-23T14:36:32.752266+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/stat_w0_seed_46/args.yaml
+      - runs/detect/stat_w0_seed_46/results.csv
+      - runs/detect/stat_w0_seed_46/weights/best.pt
+      - runs/detect/stat_w0_seed_46/weights/last.pt
+  model-t_20260723T041718_508d56-best:
+    model_id: model-t_20260723T041718_508d56-best
+    architecture: yolo26n_seed_43
+    role: trained_checkpoint
+    state: discarded
+    sha256: 2a8f63e4e7b8ca3e147e52faf792610bc1824749e0216b3fd257d08ebe94d868
+    paths:
+    - runs/detect/t_20260723T041718_508d56/weights/best.pt
+    parent_model_id: model-y26n-d02-s43-best
+    source_run_id: t_20260723T041718_508d56
+    dataset_id: ds-d04-r260719001
+    created_at: '2026-07-23T14:36:32.843155+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      evidence:
+      - runs/detect/t_20260723T041718_508d56/args.yaml
+      - runs/detect/t_20260723T041718_508d56/results.csv
+      - runs/detect/t_20260723T041718_508d56/weights/best.pt
+      - runs/detect/t_20260723T041718_508d56/weights/last.pt
+  model-train6-best:
+    model_id: model-train6-best
+    architecture: yolo11m
+    role: trained_checkpoint
+    state: experimental
+    sha256: 2f8df2be10c7cbd9db912c9e365dfe1fd3f8222f12d035a3988336425af05f91
+    paths:
+    - runs/detect/train6/weights/best.pt
+    parent_model_id: model-y11m-generic-external
+    source_run_id: train6
+    dataset_id: ds-d00-train6-external
+    created_at: '2026-07-23T14:36:32.964185+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: incomplete
+      evidence:
+      - runs/detect/train6/args.yaml
+      - runs/detect/train6/results.csv
+      - runs/detect/train6/weights/best.pt
+  model-y11m-generic-external:
+    model_id: model-y11m-generic-external
+    architecture: yolo11m
+    role: generic_pretrained
+    state: external
+    sha256: null
+    paths:
+    - models/yolo11m.pt
+    parent_model_id: null
+    source_run_id: null
+    created_at: null
+    provenance:
+      origin: reconstructed
+      confidence: incomplete
+      reconstructed_at: '2026-07-23T14:45:08.506032+00:00'
+      evidence: []
+      notes:
+      - O peso inicial de train6 não foi preservado.
+  model-y11n-generic:
+    model_id: model-y11n-generic
+    architecture: yolo11n
+    role: generic_pretrained
+    state: base
+    sha256: 0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1
+    paths:
+    - models/yolo11n.pt
+    parent_model_id: null
+    source_run_id: null
+    created_at: '2026-07-16T21:05:55.337197+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      reconstructed_at: '2026-07-23T14:45:07.853302+00:00'
+      evidence:
+      - models/yolo11n.pt
+  model-y12n-generic:
+    model_id: model-y12n-generic
+    architecture: yolo12n
+    role: generic_pretrained
+    state: base
+    sha256: 419ff3dca37d69bacc93a50fa0c186a1c6f9fe62fae0f108b0872829689e9ca6
+    paths:
+    - models/yolo12n.pt
+    parent_model_id: null
+    source_run_id: null
+    created_at: '2026-07-16T21:05:55.360378+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      reconstructed_at: '2026-07-23T14:45:07.950254+00:00'
+      evidence:
+      - models/yolo12n.pt
+  model-y26n-d02-s00-v2-best:
+    model_id: model-y26n-d02-s00-v2-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: promoted
+    sha256: 6dbb3e486d07b4bf924be3b833ab291021a6ce6422fa8267fc4b1d089cbe308b
+    paths:
+    - models/best.pt
+    - models/yolo26n_best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: yolo26n_v2
+    created_at: '2026-05-27T23:59:37.432373+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      reconstructed_at: '2026-07-23T14:45:08.169385+00:00'
+      evidence:
+      - models/best.pt
+      - models/yolo26n_best.pt
+  model-y26n-d02-s43-best:
+    model_id: model-y26n-d02-s43-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: promoted
+    sha256: 3f039603aaac2f0c0f5c58d8004e600ee7bb9618171085a58ee388c3e3eb32e6
+    paths:
+    - models/yolo26n_seed_43.pt
+    - models/yolo26n_v2_best.pt
+    parent_model_id: model-y26n-d02-s00-v2-best
+    source_run_id: stat_w0_seed_43
+    created_at: '2026-06-11T21:54:05.101043+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      reconstructed_at: '2026-07-23T14:45:08.269170+00:00'
+      evidence:
+      - models/yolo26n_seed_43.pt
+      - models/yolo26n_v2_best.pt
+  model-y26n-d03fixed-s43-best:
+    model_id: model-y26n-d03fixed-s43-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: baseline
+    sha256: 2ba3458e01e0138b4e90555e922f618e218ee5c852191d6d5e5b63991d06c7c5
+    paths:
+    - models/yolo26n_fixed_valtest_seed43_best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: stat_fixed_valtest_yolo26n_base_e150_b16_seed_43
+    created_at: '2026-06-13T00:49:22.648423+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      reconstructed_at: '2026-07-23T14:45:08.373525+00:00'
+      evidence:
+      - models/yolo26n_fixed_valtest_seed43_best.pt
+  model-y26n-d04r001-s42-best:
+    model_id: model-y26n-d04r001-s42-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: candidate
+    sha256: 5ffb5447d21bb108296414675cbaf6a05b367afa1ec622878a9fa0f90e4e1d20
+    paths:
+    - models/yolo26n_dataset_260719001_partial_best.pt
+    parent_model_id: model-y26n-d03fixed-s43-best
+    source_run_id: dataset_260719001__yolo26n_fixed_valtest_seed43_best__20260720_012436_571432
+    created_at: '2026-07-20T01:31:36.173543+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      reconstructed_at: '2026-07-23T14:45:08.473465+00:00'
+      evidence:
+      - models/yolo26n_dataset_260719001_partial_best.pt
+  model-y26n-generic:
+    model_id: model-y26n-generic
+    architecture: yolo26n
+    role: generic_pretrained
+    state: base
+    sha256: 9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef
+    paths:
+    - models/yolo26n.pt
+    parent_model_id: null
+    source_run_id: null
+    created_at: '2026-06-11T20:31:39.644507+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: confirmed
+      reconstructed_at: '2026-07-23T14:45:08.073360+00:00'
+      evidence:
+      - models/yolo26n.pt
+  model-yolo26n_baseline-best:
+    model_id: model-yolo26n_baseline-best
+    architecture: yolo26n
+    role: trained_checkpoint
+    state: experimental
+    sha256: 12fe22ad029134d7b7da38ca811be933298aa0e499f483988935f059fab95dd0
+    paths:
+    - runs/detect/yolo26n_baseline/weights/best.pt
+    parent_model_id: model-y26n-generic
+    source_run_id: yolo26n_baseline
+    dataset_id: ds-d01-128
+    created_at: '2026-07-23T14:36:33.055303+00:00'
+    provenance:
+      origin: reconstructed
+      confidence: probable
+      evidence:
+      - runs/detect/yolo26n_baseline/args.yaml
+      - runs/detect/yolo26n_baseline/results.csv
+      - runs/detect/yolo26n_baseline/weights/best.pt
+      - runs/detect/yolo26n_baseline/weights/last.pt

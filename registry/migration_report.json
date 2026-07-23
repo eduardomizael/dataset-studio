@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "migrated_at": "2026-07-23T14:45:09.296508+00:00",
+  "source_root": "C:\\Users\\eduar\\Desktop\\fish_detection",
+  "workspace": "C:\\Users\\eduar\\Desktop\\dataset-studio",
+  "copied_models": 0,
+  "existing_or_identical_models": 12,
+  "copied_runs": 0,
+  "existing_runs": 26,
+  "registered_runs": 28,
+  "copied_run_summaries": 2,
+  "registered_datasets": 7,
+  "validation": {
+    "schema_version": 1,
+    "validated_at": "2026-07-23T14:45:09.296508+00:00",
+    "valid": true,
+    "models": 32,
+    "aliases": 36,
+    "datasets": 7,
+    "runs": 28,
+    "errors": [],
+    "warnings": [
+      "model-y11m-generic-external: arquivo ausente: models/yolo11m.pt",
+      "model-y11m-generic-external: nenhum arquivo físico disponível"
+    ]
+  }
+}

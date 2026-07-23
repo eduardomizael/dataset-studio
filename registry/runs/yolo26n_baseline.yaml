@@ -1,0 +1,159 @@
+schema_version: 1
+run_id: yolo26n_baseline
+legacy_name: yolo26n_baseline
+status: completed
+state: experimental
+created_at: '2026-05-27T18:11:19.201928+00:00'
+started_at: null
+completed_at: '2026-05-27T18:14:03.106050+00:00'
+dataset_id: ds-d01-128
+initial_model_id: model-y26n-generic
+initial_model_sha256: 9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef
+output_model_id: model-yolo26n_baseline-best
+training:
+  task: detect
+  mode: train
+  model: models/yolo26n.pt
+  data: dataset_custom.yaml
+  epochs: 100
+  time: null
+  patience: 100
+  batch: -1
+  imgsz: 640
+  save: true
+  save_period: -1
+  cache: false
+  device: '0'
+  workers: 8
+  project: null
+  name: yolo26n_baseline
+  exist_ok: false
+  pretrained: true
+  optimizer: auto
+  verbose: true
+  seed: 0
+  deterministic: true
+  single_cls: false
+  rect: false
+  cos_lr: false
+  close_mosaic: 10
+  resume: false
+  amp: true
+  fraction: 1.0
+  profile: false
+  freeze: null
+  multi_scale: 0.0
+  compile: false
+  overlap_mask: true
+  mask_ratio: 4
+  dropout: 0.0
+  val: true
+  split: val
+  save_json: false
+  conf: null
+  iou: 0.7
+  max_det: 300
+  half: false
+  dnn: false
+  plots: true
+  end2end: null
+  source: null
+  vid_stride: 1
+  stream_buffer: false
+  visualize: false
+  augment: false
+  agnostic_nms: false
+  classes: null
+  retina_masks: false
+  embed: null
+  show: false
+  save_frames: false
+  save_txt: false
+  save_conf: false
+  save_crop: false
+  show_labels: true
+  show_conf: true
+  show_boxes: true
+  line_width: null
+  format: torchscript
+  keras: false
+  optimize: false
+  int8: false
+  dynamic: false
+  simplify: true
+  opset: null
+  workspace: null
+  nms: false
+  lr0: 0.01
+  lrf: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  box: 7.5
+  cls: 0.5
+  cls_pw: 0.0
+  dfl: 1.5
+  pose: 12.0
+  kobj: 1.0
+  rle: 1.0
+  angle: 1.0
+  nbs: 64
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.0
+  fliplr: 0.5
+  bgr: 0.0
+  mosaic: 1.0
+  mixup: 0.0
+  cutmix: 0.0
+  copy_paste: 0.0
+  copy_paste_mode: flip
+  auto_augment: randaugment
+  erasing: 0.4
+  cfg: null
+  tracker: botsort.yaml
+  save_dir: C:\Users\eduar\Desktop\peixes\runs\detect\yolo26n_baseline
+metrics:
+  completed_epochs: 100
+  best_epoch: 70
+  best:
+    precision: 0.85941
+    recall: 0.85106
+    map50: 0.90753
+    map50_95: 0.64193
+  final:
+    precision: 0.90573
+    recall: 0.81777
+    map50: 0.87646
+    map50_95: 0.62722
+artifacts:
+  args:
+    path: runs/detect/yolo26n_baseline/args.yaml
+    sha256: 86160832c7cfc0f0d21bf17122fe1a47f46a5276e5fa8c9d64a97b567738f30a
+  results:
+    path: runs/detect/yolo26n_baseline/results.csv
+    sha256: 4f21ece35107d65d619cdff46e8368ebee742b7e596f70e34ff12644ecdc98de
+  best:
+    path: runs/detect/yolo26n_baseline/weights/best.pt
+    sha256: 12fe22ad029134d7b7da38ca811be933298aa0e499f483988935f059fab95dd0
+  last:
+    path: runs/detect/yolo26n_baseline/weights/last.pt
+    sha256: bc91793c4db199d8a60a4676a16f637ef1de820452d0ab217cbc6ad157309995
+git_commit: null
+provenance:
+  origin: reconstructed
+  confidence: probable
+  reconstructed_at: '2026-07-23T14:45:07.617854+00:00'
+  evidence:
+  - C:\Users\eduar\Desktop\fish_detection\docs\historico_treinamentos_modelos.md
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\yolo26n_baseline\args.yaml
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\yolo26n_baseline\results.csv
+  - C:\Users\eduar\Desktop\dataset-studio\runs\detect\yolo26n_baseline\results.csv

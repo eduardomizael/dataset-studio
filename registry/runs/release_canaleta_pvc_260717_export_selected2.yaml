@@ -1,0 +1,159 @@
+schema_version: 1
+run_id: release_canaleta_pvc_260717_export_selected2
+legacy_name: release_canaleta_pvc_260717_export_selected2
+status: completed
+state: experimental
+created_at: '2026-07-21T17:44:28.435032+00:00'
+started_at: null
+completed_at: '2026-07-21T18:25:31.872430+00:00'
+dataset_id: ds-d04-r260719001
+initial_model_id: model-y26n-d03fixed-s43-best
+initial_model_sha256: 2ba3458e01e0138b4e90555e922f618e218ee5c852191d6d5e5b63991d06c7c5
+output_model_id: model-release_canaleta_pvc_260717_export_selected2-best
+training:
+  task: detect
+  mode: train
+  model: models/yolo26n_fixed_valtest_seed43_best.pt
+  data: C:\Users\eduar\Desktop\dataset-studio\dataset\versions\release_canaleta_pvc_260717_export_selected\data.yaml
+  epochs: 50
+  time: null
+  patience: 50
+  batch: -1
+  imgsz: 640
+  save: true
+  save_period: -1
+  cache: false
+  device: cpu
+  workers: 0
+  project: C:\Users\eduar\Desktop\dataset-studio\runs\detect
+  name: release_canaleta_pvc_260717_export_selected2
+  exist_ok: false
+  pretrained: true
+  optimizer: auto
+  verbose: true
+  seed: 0
+  deterministic: true
+  single_cls: false
+  rect: false
+  cos_lr: false
+  close_mosaic: 10
+  resume: false
+  amp: true
+  fraction: 1.0
+  profile: false
+  freeze: null
+  multi_scale: 0.0
+  compile: false
+  overlap_mask: true
+  mask_ratio: 4
+  dropout: 0.0
+  val: true
+  split: val
+  save_json: false
+  conf: null
+  iou: 0.7
+  max_det: 300
+  half: false
+  dnn: false
+  plots: true
+  end2end: null
+  source: null
+  vid_stride: 1
+  stream_buffer: false
+  visualize: false
+  augment: false
+  agnostic_nms: false
+  classes: null
+  retina_masks: false
+  embed: null
+  show: false
+  save_frames: false
+  save_txt: false
+  save_conf: false
+  save_crop: false
+  show_labels: true
+  show_conf: true
+  show_boxes: true
+  line_width: null
+  format: torchscript
+  keras: false
+  optimize: false
+  int8: false
+  dynamic: false
+  simplify: true
+  opset: null
+  workspace: null
+  nms: false
+  lr0: 0.01
+  lrf: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  box: 7.5
+  cls: 0.5
+  cls_pw: 0.0
+  dfl: 1.5
+  pose: 12.0
+  kobj: 1.0
+  rle: 1.0
+  angle: 1.0
+  nbs: 64
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.0
+  fliplr: 0.5
+  bgr: 0.0
+  mosaic: 1.0
+  mixup: 0.0
+  cutmix: 0.0
+  copy_paste: 0.0
+  copy_paste_mode: flip
+  auto_augment: randaugment
+  erasing: 0.4
+  cfg: null
+  tracker: botsort.yaml
+  save_dir: C:\Users\eduar\Desktop\dataset-studio\runs\detect\release_canaleta_pvc_260717_export_selected2
+metrics:
+  completed_epochs: 50
+  best_epoch: 39
+  best:
+    precision: 0.98468
+    recall: 0.96377
+    map50: 0.98833
+    map50_95: 0.88818
+  final:
+    precision: 1.0
+    recall: 0.96153
+    map50: 0.98805
+    map50_95: 0.87514
+artifacts:
+  args:
+    path: runs/detect/release_canaleta_pvc_260717_export_selected2/args.yaml
+    sha256: 5170812ee158a79de4f9dc87ed390e7ab5322534f1b319cb16cd21b6e8f9a721
+  results:
+    path: runs/detect/release_canaleta_pvc_260717_export_selected2/results.csv
+    sha256: d4076d171aa7c2b2505773c5aca791db85fd711368e3bbbc606d2cb6b8e1ce14
+  best:
+    path: runs/detect/release_canaleta_pvc_260717_export_selected2/weights/best.pt
+    sha256: ed6d809568c095f341c85462c39034cccb6ebc7c623b39206ac7a4ab72c63f75
+  last:
+    path: runs/detect/release_canaleta_pvc_260717_export_selected2/weights/last.pt
+    sha256: d1a5490cd28198a8fb3e6c60519285078697876f9ba6b25c9b9aaf106f91852f
+git_commit: null
+provenance:
+  origin: reconstructed
+  confidence: confirmed
+  reconstructed_at: '2026-07-23T14:45:04.874755+00:00'
+  evidence:
+  - C:\Users\eduar\Desktop\fish_detection\docs\historico_treinamentos_modelos.md
+  - C:\Users\eduar\Desktop\dataset-studio\runs\detect\release_canaleta_pvc_260717_export_selected2\args.yaml
+  - C:\Users\eduar\Desktop\dataset-studio\runs\detect\release_canaleta_pvc_260717_export_selected2\results.csv
+  - C:\Users\eduar\Desktop\dataset-studio\runs\detect\release_canaleta_pvc_260717_export_selected2\results.csv

@@ -1,0 +1,161 @@
+schema_version: 1
+run_id: stat_e100_seed_44
+legacy_name: stat_e100_seed_44
+status: completed
+state: experimental
+created_at: '2026-06-12T12:30:52.725742+00:00'
+started_at: null
+completed_at: '2026-06-12T13:13:09.863089+00:00'
+dataset_id: ds-d03-variable
+initial_model_id: model-y26n-d02-s00-v2-best
+initial_model_sha256: 6dbb3e486d07b4bf924be3b833ab291021a6ce6422fa8267fc4b1d089cbe308b
+output_model_id: model-stat_e100_seed_44-best
+training:
+  task: detect
+  mode: train
+  model: models/yolo26n_best.pt
+  data: C:\Users\eduar\Desktop\fish_detection\dataset\04_splits\seed_44\data.yaml
+  epochs: 100
+  time: null
+  patience: 20
+  batch: 8
+  imgsz: 640
+  save: true
+  save_period: -1
+  cache: false
+  device: '0'
+  workers: 0
+  project: C:\Users\eduar\Desktop\fish_detection\runs\detect
+  name: stat_e100_seed_44
+  exist_ok: false
+  pretrained: true
+  optimizer: auto
+  verbose: true
+  seed: 44
+  deterministic: true
+  single_cls: false
+  rect: false
+  cos_lr: true
+  close_mosaic: 5
+  resume: false
+  amp: true
+  fraction: 1.0
+  profile: false
+  freeze: null
+  multi_scale: false
+  compile: false
+  overlap_mask: true
+  mask_ratio: 4
+  dropout: 0.0
+  val: true
+  split: val
+  save_json: false
+  conf: null
+  iou: 0.7
+  max_det: 300
+  half: false
+  dnn: false
+  plots: true
+  end2end: null
+  source: null
+  vid_stride: 1
+  stream_buffer: false
+  visualize: false
+  augment: false
+  agnostic_nms: false
+  classes: null
+  retina_masks: false
+  embed: null
+  show: false
+  save_frames: false
+  save_txt: false
+  save_conf: false
+  save_crop: false
+  show_labels: true
+  show_conf: true
+  show_boxes: true
+  line_width: null
+  format: torchscript
+  keras: false
+  optimize: false
+  int8: false
+  dynamic: false
+  simplify: true
+  opset: null
+  workspace: null
+  nms: false
+  lr0: 0.01
+  lrf: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  box: 7.5
+  cls: 0.5
+  cls_pw: 0.0
+  dfl: 1.5
+  pose: 12.0
+  kobj: 1.0
+  rle: 1.0
+  angle: 1.0
+  nbs: 64
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.3
+  fliplr: 0.5
+  bgr: 0.0
+  mosaic: 1.0
+  mixup: 0.0
+  cutmix: 0.0
+  copy_paste: 0.0
+  copy_paste_mode: flip
+  auto_augment: randaugment
+  erasing: 0.4
+  cfg: null
+  tracker: botsort.yaml
+  save_dir: C:\Users\eduar\Desktop\fish_detection\runs\detect\stat_e100_seed_44
+metrics:
+  completed_epochs: 100
+  best_epoch: 84
+  best:
+    precision: 0.95108
+    recall: 0.92398
+    map50: 0.97411
+    map50_95: 0.79304
+  final:
+    precision: 0.94045
+    recall: 0.95428
+    map50: 0.97396
+    map50_95: 0.79094
+artifacts:
+  args:
+    path: runs/detect/stat_e100_seed_44/args.yaml
+    sha256: ff8fbcb48ce2d525d985713e1b18eaf2885cf34739468fd6beaeb0057929e09e
+  results:
+    path: runs/detect/stat_e100_seed_44/results.csv
+    sha256: ddad7f119f652bf8b0127fc3f541359f91394ff70bb0a499c9b71675f7734bbe
+  best:
+    path: runs/detect/stat_e100_seed_44/weights/best.pt
+    sha256: 51f0af06be902b492dd307187445a2cf8fc9241bc28831a4e10e5ae082e94cb5
+  last:
+    path: runs/detect/stat_e100_seed_44/weights/last.pt
+    sha256: 48abd795c77066c717e6fde252df4d0751ad1f1212a4e37b38e0581e5d558b2c
+git_commit: null
+provenance:
+  origin: reconstructed
+  confidence: confirmed
+  reconstructed_at: '2026-07-23T14:45:05.231359+00:00'
+  evidence:
+  - C:\Users\eduar\Desktop\fish_detection\docs\historico_treinamentos_modelos.md
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\stat_summary.csv
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\stat_aggregate.csv
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\stat_e100_seed_44\args.yaml
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\stat_e100_seed_44\results.csv
+  - C:\Users\eduar\Desktop\dataset-studio\runs\detect\stat_e100_seed_44\results.csv

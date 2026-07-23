@@ -1,0 +1,153 @@
+schema_version: 1
+run_id: train6
+legacy_name: train6
+status: completed
+state: experimental
+created_at: '2026-04-16T00:38:35.814772+00:00'
+started_at: null
+completed_at: '2026-04-16T00:38:36.029802+00:00'
+dataset_id: ds-d00-train6-external
+initial_model_id: model-y11m-generic-external
+initial_model_sha256: null
+output_model_id: model-train6-best
+training:
+  task: detect
+  mode: train
+  model: models/yolo11m.pt
+  data: dataset_custom.yaml
+  epochs: 100
+  time: null
+  patience: 100
+  batch: 17
+  imgsz: 720
+  save: true
+  save_period: -1
+  cache: false
+  device: 0
+  workers: 1
+  project: null
+  name: train6
+  exist_ok: false
+  pretrained: true
+  optimizer: auto
+  verbose: true
+  seed: 0
+  deterministic: true
+  single_cls: false
+  rect: false
+  cos_lr: false
+  close_mosaic: 10
+  resume: false
+  amp: true
+  fraction: 1.0
+  profile: false
+  freeze: null
+  multi_scale: false
+  overlap_mask: true
+  mask_ratio: 4
+  dropout: 0.0
+  val: true
+  split: val
+  save_json: false
+  save_hybrid: false
+  conf: null
+  iou: 0.7
+  max_det: 300
+  half: false
+  dnn: false
+  plots: true
+  source: null
+  vid_stride: 1
+  stream_buffer: false
+  visualize: false
+  augment: false
+  agnostic_nms: false
+  classes: null
+  retina_masks: false
+  embed: null
+  show: false
+  save_frames: false
+  save_txt: false
+  save_conf: false
+  save_crop: false
+  show_labels: true
+  show_conf: true
+  show_boxes: true
+  line_width: null
+  format: torchscript
+  keras: false
+  optimize: false
+  int8: false
+  dynamic: false
+  simplify: true
+  opset: null
+  workspace: 4
+  nms: false
+  lr0: 0.01
+  lrf: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  box: 7.5
+  cls: 0.5
+  dfl: 1.5
+  pose: 12.0
+  kobj: 1.0
+  label_smoothing: 0.0
+  nbs: 64
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.0
+  fliplr: 0.5
+  bgr: 0.0
+  mosaic: 1.0
+  mixup: 0.0
+  copy_paste: 0.0
+  copy_paste_mode: flip
+  auto_augment: randaugment
+  erasing: 0.4
+  crop_fraction: 1.0
+  cfg: null
+  tracker: botsort.yaml
+  save_dir: runs\detect\train6
+metrics:
+  completed_epochs: 100
+  best_epoch: 100
+  best:
+    precision: 0.86037
+    recall: 0.81818
+    map50: 0.80506
+    map50_95: 0.40819
+  final:
+    precision: 0.86037
+    recall: 0.81818
+    map50: 0.80506
+    map50_95: 0.40819
+artifacts:
+  args:
+    path: runs/detect/train6/args.yaml
+    sha256: 34184847f43d5ce497978cbac5b31886f629d2bbefc71b952b921fa6511333c3
+  results:
+    path: runs/detect/train6/results.csv
+    sha256: 5ca38341a37bb63145283028a567a453451e87ca489674668cb32f20068ebcf6
+  best:
+    path: runs/detect/train6/weights/best.pt
+    sha256: 2f8df2be10c7cbd9db912c9e365dfe1fd3f8222f12d035a3988336425af05f91
+git_commit: null
+provenance:
+  origin: reconstructed
+  confidence: incomplete
+  reconstructed_at: '2026-07-23T14:45:07.478128+00:00'
+  evidence:
+  - C:\Users\eduar\Desktop\fish_detection\docs\historico_treinamentos_modelos.md
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\train6\args.yaml
+  - C:\Users\eduar\Desktop\fish_detection\runs\detect\train6\results.csv
+  - C:\Users\eduar\Desktop\dataset-studio\runs\detect\train6\results.csv
