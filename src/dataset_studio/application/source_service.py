@@ -16,6 +16,7 @@ from dataset_studio.domain import (
     load_source,
     load_frame_manifest,
     selected_export_path,
+    source_capture_units,
     source_root,
 )
 
@@ -117,6 +118,9 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
                 "confirmed_negatives": revision_report.get("confirmed_negatives", 0),
                 "boxes": revision_report.get("boxes", 0),
                 "per_video": revision_report.get("per_video", {}),
+                "per_unit": revision_report.get(
+                    "per_unit", revision_report.get("per_video", {})
+                ),
             }
         )
     accepted = bool(revisions)
@@ -154,6 +158,7 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
         "campaign_id": source_id,
         "videos": videos,
         "video_details": video_details,
+        "capture_units": source_capture_units(source),
         "frames": frames,
         "import_tasks": tasks,
         "export_accepted": accepted,

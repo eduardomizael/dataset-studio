@@ -116,6 +116,7 @@ def test_e2e_full_dataset_studio_pipeline(tmp_path: Path):
             "val": ["piloto_2026/vid_val.mp4"],
         },
         annotation_revisions={"piloto_2026": "rev_v1"},
+        evaluation_level="pilot",
     )
     assert rel_config.exists()
 

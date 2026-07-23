@@ -125,6 +125,7 @@ class SourceCreateReq(BaseModel):
 
     video_files: list[str] | None = None
     video_notes: dict[str, str] | None = None
+    capture_units: list[dict[str, Any]] | None = None
     classes: list[str] = Field(default_factory=lambda: ["objeto"])
 
     @property
@@ -174,6 +175,7 @@ class VersionCreateReq(BaseModel):
     campaigns: list[str] | None = None
     assignments: dict[str, list[str]]
     annotation_revisions: dict[str, str] = Field(default_factory=dict)
+    evaluation_level: Literal["pilot", "standard", "robust"] = "standard"
 
     @property
     def target_id(self) -> str:
@@ -200,6 +202,7 @@ class SplitPreviewReq(BaseModel):
     campaign_id: str | None = None
     assignments: dict[str, list[str]]
     revision_id: str | None = None
+    evaluation_level: Literal["pilot", "standard", "robust"] = "standard"
 
 
 
@@ -425,8 +428,12 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 </div>
 
                 <!-- Container de Notas Individuais por Vídeo -->
-                <div id="video-notes-container" class="hidden space-y-2 max-h-48 overflow-y-auto pr-1">
-                    <label class="block text-slate-300 font-medium text-xs">Observações / Comentários por Vídeo (opcional):</label>
+                <div id="video-notes-container" class="hidden space-y-2 max-h-72 overflow-y-auto pr-1">
+                    <label class="block text-slate-300 font-medium text-xs">Vídeos e unidades experimentais:</label>
+                    <p class="text-[11px] text-slate-400">
+                        Um vídeo contínuo pode ser dividido em levas independentes sem recodificação.
+                        Use segundos de início e fim; intervalos não utilizados serão excluídos.
+                    </p>
                     <div id="video-notes-list" class="space-y-2"></div>
                 </div>
 
@@ -469,19 +476,72 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 let notesHtml = '';
                 Array.from(files).forEach((f, idx) => {
                     notesHtml += `
-                        <div class="p-2.5 bg-slate-800/60 border border-slate-700/60 rounded-lg space-y-1">
-                            <div class="text-xs font-mono font-medium text-indigo-300">${escapeHtml(f.name)}</div>
+                        <div data-video-card data-video-name="${escapeHtml(f.name)}" data-video-index="${idx}" class="p-2.5 bg-slate-800/60 border border-slate-700/60 rounded-lg space-y-2">
+                            <div class="flex justify-between gap-2">
+                                <div class="text-xs font-mono font-medium text-indigo-300">${escapeHtml(f.name)}</div>
+                                <span data-duration-label class="text-[10px] text-slate-500">Lendo duração...</span>
+                            </div>
                             <input type="text" data-video-note-name="${escapeHtml(f.name)}" placeholder="Ex: Iluminação baixa, peixes rápidos, câmera 2..." class="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[11px] text-slate-400">Sem divisão: o vídeo inteiro será uma unidade.</span>
+                                <button type="button" onclick="addCaptureSegment(this)" class="px-2 py-1 bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 rounded text-[10px]">+ Adicionar leva</button>
+                            </div>
+                            <div data-segments class="space-y-2"></div>
                         </div>
                     `;
                 });
                 notesList.innerHTML = notesHtml;
                 notesContainer.classList.remove('hidden');
+                Array.from(files).forEach((file, idx) => {
+                    const card = notesList.querySelector(`[data-video-index="${idx}"]`);
+                    const preview = document.createElement('video');
+                    const objectUrl = URL.createObjectURL(file);
+                    preview.preload = 'metadata';
+                    preview.onloadedmetadata = () => {
+                        const duration = Number(preview.duration || 0);
+                        card.setAttribute('data-duration', String(duration));
+                        card.querySelector('[data-duration-label]').innerText =
+                            duration > 0 ? `Duração: ${duration.toFixed(1)} s` : 'Duração indisponível';
+                        URL.revokeObjectURL(objectUrl);
+                    };
+                    preview.onerror = () => {
+                        card.querySelector('[data-duration-label]').innerText = 'Duração indisponível';
+                        URL.revokeObjectURL(objectUrl);
+                    };
+                    preview.src = objectUrl;
+                });
             } else {
                 infoDiv.classList.add('hidden');
                 notesContainer.classList.add('hidden');
                 notesList.innerHTML = '';
             }
+        }
+
+        function safeUnitId(value) {
+            const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[.][^.]+$/, '').replace(/[^A-Za-z0-9_-]+/g, '_')
+                .replace(/^[_-]+|[_-]+$/g, '');
+            return normalized || 'unidade';
+        }
+
+        function addCaptureSegment(button) {
+            const card = button.closest('[data-video-card]');
+            const container = card.querySelector('[data-segments]');
+            const videoName = card.getAttribute('data-video-name');
+            const videoIndex = Number(card.getAttribute('data-video-index') || 0);
+            const duration = Number(card.getAttribute('data-duration') || 0);
+            const segmentIndex = container.querySelectorAll('.capture-segment-row').length + 1;
+            const unitId = `${safeUnitId(videoName)}_leva_${String(segmentIndex).padStart(2, '0')}_${videoIndex + 1}`;
+            const row = document.createElement('div');
+            row.className = 'capture-segment-row grid grid-cols-1 sm:grid-cols-5 gap-1.5 p-2 bg-slate-950/70 border border-slate-700 rounded';
+            row.innerHTML = `
+                <input data-unit-id value="${unitId}" placeholder="ID da leva" class="sm:col-span-2 bg-slate-900 border border-slate-700 rounded p-1.5 text-[11px] text-white font-mono">
+                <input data-start type="number" min="0" step="0.1" value="0" placeholder="Início (s)" class="bg-slate-900 border border-slate-700 rounded p-1.5 text-[11px] text-white">
+                <input data-end type="number" min="0" step="0.1" value="${duration > 0 ? duration.toFixed(1) : ''}" placeholder="Fim (s)" class="bg-slate-900 border border-slate-700 rounded p-1.5 text-[11px] text-white">
+                <button type="button" onclick="this.closest('.capture-segment-row').remove()" class="text-rose-400 text-[11px]">Remover</button>
+                <input data-unit-note placeholder="Descrição da leva / condição" class="sm:col-span-5 bg-slate-900 border border-slate-700 rounded p-1.5 text-[11px] text-white">
+            `;
+            container.appendChild(row);
         }
 
         async function submitCreateCampaign() {
@@ -510,12 +570,44 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     videoNotes[name] = note;
                 }
             });
+            const cards = Array.from(document.querySelectorAll('[data-video-card]'));
+            const hasSegments = cards.some(
+                card => card.querySelectorAll('.capture-segment-row').length > 0
+            );
+            const captureUnits = [];
+            if (hasSegments) {
+                cards.forEach((card, videoIndex) => {
+                    const videoName = card.getAttribute('data-video-name');
+                    const rows = Array.from(card.querySelectorAll('.capture-segment-row'));
+                    if (rows.length === 0) {
+                        captureUnits.push({
+                            unit_id: `${safeUnitId(videoName)}_completo_${videoIndex + 1}`,
+                            source_video: videoName,
+                            start_seconds: 0,
+                            end_seconds: null,
+                            note: videoNotes[videoName] || ''
+                        });
+                        return;
+                    }
+                    rows.forEach(row => {
+                        const endRaw = row.querySelector('[data-end]').value.trim();
+                        captureUnits.push({
+                            unit_id: row.querySelector('[data-unit-id]').value.trim(),
+                            source_video: videoName,
+                            start_seconds: Number(row.querySelector('[data-start]').value),
+                            end_seconds: endRaw === '' ? null : Number(endRaw),
+                            note: row.querySelector('[data-unit-note]').value.trim()
+                        });
+                    });
+                });
+            }
 
             const formData = new FormData();
             formData.append('source_id', id);
             formData.append('campaign_id', id);
             formData.append('classes', JSON.stringify(classes));
             formData.append('video_notes', JSON.stringify(videoNotes));
+            formData.append('capture_units', JSON.stringify(captureUnits));
             for (const file of filesInput.files) {
                 formData.append('videos', file);
             }
@@ -1599,7 +1691,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             <div>
                 <a href="/" class="text-xs text-indigo-400 hover:underline mb-1 inline-block">&larr; Voltar para a Tela Inicial</a>
                 <h1 class="text-3xl font-extrabold tracking-tight text-emerald-400" id="rel-title">Versão do Dataset</h1>
-                <p class="text-slate-400 text-sm mt-1" id="rel-subtitle">Divisão de dataset por vídeos completos (sem vazamento) e treinamento</p>
+                <p class="text-slate-400 text-sm mt-1" id="rel-subtitle">Divisão por unidades experimentais completas, sem vazamento entre splits</p>
             </div>
             <span id="rel-status-badge" class="px-3 py-1.5 bg-slate-800 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-semibold">
                 Status: ...
@@ -1618,7 +1710,20 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 <div class="flex items-center gap-2">
                     <label class="text-xs text-slate-400 font-medium whitespace-nowrap">Nome/ID da Release:</label>
                     <input type="text" id="input-release-id" class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-emerald-300 font-mono w-64 focus:border-emerald-500 focus:outline-none font-bold">
+                    <select id="evaluation-level" onchange="updateSplitPreview()" class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white">
+                        <option value="standard">Padrão: treino + validação + teste</option>
+                        <option value="pilot">Piloto: permite apenas treino</option>
+                        <option value="robust">Robusto: inclui teste de estresse</option>
+                    </select>
                 </div>
+            </div>
+            <div class="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-200">
+                Uma versão padrão exige unidades experimentais independentes em treino, validação e teste normal.
+                O modo piloto permite começar com uma única unidade, mas suas métricas não comprovam generalização.
+                O teste de estresse é opcional, salvo no modo robusto.
+            </div>
+            <div id="split-quality-assessment" class="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-400">
+                Atribua as unidades para verificar suficiência de frames e anotações.
             </div>
 
             <!-- Cards de Métricas em Tempo Real (4 Splits) -->
@@ -1692,9 +1797,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 </div>
             </div>
 
-            <!-- Tabela de Atribuição por Vídeo -->
+            <!-- Tabela de Atribuição por Unidade Experimental -->
             <div class="space-y-3">
-                <h3 class="text-sm font-bold text-slate-300">Defina o papel de cada vídeo:</h3>
+                <h3 class="text-sm font-bold text-slate-300">Defina o papel de cada unidade experimental:</h3>
                 <div class="space-y-2" id="video-assignment-list">
                     Carregando vídeos...
                 </div>
@@ -1804,6 +1909,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     body: JSON.stringify({
                         campaign_id: campaignId,
                         revision_id: annotationRevisionId,
+                        evaluation_level: document.getElementById('evaluation-level').value,
                         assignments: {
                             train: videoList.filter(v => videoAssignments[v] === 'train').map(v => campaignId + '/' + v),
                             val: videoList.filter(v => videoAssignments[v] === 'val').map(v => campaignId + '/' + v),
@@ -1814,21 +1920,35 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 });
                 const data = await res.json();
                 
-                document.getElementById('cnt-train-videos').innerText = `${data.train ? data.train.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-train-videos').innerText = `${data.train ? data.train.videos : 0} Unidade(s)`;
                 document.getElementById('cnt-train-frames').innerText = data.train ? data.train.frames : 0;
                 document.getElementById('cnt-train-boxes').innerText = data.train ? data.train.boxes : 0;
 
-                document.getElementById('cnt-val-videos').innerText = `${data.val ? data.val.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-val-videos').innerText = `${data.val ? data.val.videos : 0} Unidade(s)`;
                 document.getElementById('cnt-val-frames').innerText = data.val ? data.val.frames : 0;
                 document.getElementById('cnt-val-boxes').innerText = data.val ? data.val.boxes : 0;
 
-                document.getElementById('cnt-test-normal-videos').innerText = `${data.test_normal ? data.test_normal.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-test-normal-videos').innerText = `${data.test_normal ? data.test_normal.videos : 0} Unidade(s)`;
                 document.getElementById('cnt-test-normal-frames').innerText = data.test_normal ? data.test_normal.frames : 0;
                 document.getElementById('cnt-test-normal-boxes').innerText = data.test_normal ? data.test_normal.boxes : 0;
 
-                document.getElementById('cnt-test-stress-videos').innerText = `${data.test_stress ? data.test_stress.videos : 0} Vídeo(s)`;
+                document.getElementById('cnt-test-stress-videos').innerText = `${data.test_stress ? data.test_stress.videos : 0} Unidade(s)`;
                 document.getElementById('cnt-test-stress-frames').innerText = data.test_stress ? data.test_stress.frames : 0;
                 document.getElementById('cnt-test-stress-boxes').innerText = data.test_stress ? data.test_stress.boxes : 0;
+                const quality = data.quality_assessment || {};
+                const qualityBox = document.getElementById('split-quality-assessment');
+                const blockers = quality.blocking || [];
+                const warnings = quality.warnings || [];
+                if (blockers.length > 0) {
+                    qualityBox.className = 'p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300';
+                    qualityBox.innerHTML = `<strong>Materialização bloqueada:</strong><br>${blockers.map(escapeHtml).join('<br>')}`;
+                } else if (warnings.length > 0) {
+                    qualityBox.className = 'p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-200';
+                    qualityBox.innerHTML = `<strong>Avisos de suficiência:</strong><br>${warnings.map(escapeHtml).join('<br>')}`;
+                } else {
+                    qualityBox.className = 'p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300';
+                    qualityBox.innerText = 'Os requisitos estruturais mínimos foram atendidos.';
+                }
             } catch (err) {
                 console.error(err);
             }
@@ -1854,6 +1974,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     body: JSON.stringify({
                         release_id: targetRelId,
                         campaigns: [campaignId],
+                        evaluation_level: document.getElementById('evaluation-level').value,
                         annotation_revisions: annotationRevisionId ? { [campaignId]: annotationRevisionId } : {},
                         assignments: {
                             train: trainV,
@@ -2185,10 +2306,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 videoDetails.forEach(v => {
                     notesMap[v.name] = v.note || '';
                 });
+                (st.capture_units || []).forEach(unit => {
+                    notesMap[unit.unit_id] = unit.note || unit.condition || '';
+                });
 
-                videoList = Object.keys(report.per_video || {});
-                if (videoList.length === 0 && videoDetails.length > 0) {
-                    videoList = videoDetails.map(v => v.name);
+                videoList = Object.keys(report.per_unit || report.per_video || {});
+                if (videoList.length === 0 && (st.capture_units || []).length > 0) {
+                    videoList = st.capture_units.map(unit => unit.unit_id);
                 }
 
                 if (videoList.length === 0) {
@@ -2196,9 +2320,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     return;
                 }
 
-                // Atribuir por padrão com base no comentário/nota do vídeo ou 80% train, 20% val.
+                // Atribuir por padrão com base na nota da unidade.
                 // Para releases existentes, preservar exatamente a configuração registrada.
                 const storedAssignments = existingReleaseInfo ? (existingReleaseInfo.assignments || {}) : {};
+                if (existingReleaseInfo && existingReleaseInfo.evaluation_level) {
+                    document.getElementById('evaluation-level').value =
+                        existingReleaseInfo.evaluation_level;
+                }
                 const storedRoleByVideo = {};
                 Object.entries(storedAssignments).forEach(([role, items]) => {
                     (items || []).forEach(item => {
@@ -2207,7 +2335,6 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         storedRoleByVideo[videoName] = role;
                     });
                 });
-                const mid = Math.ceil(videoList.length * 0.8);
                 videoList.forEach((v, idx) => {
                     if (storedRoleByVideo[v]) {
                         videoAssignments[v] = storedRoleByVideo[v];
@@ -2222,8 +2349,12 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         videoAssignments[v] = 'val';
                     } else if (noteStr.includes('treino') || noteStr.includes('train')) {
                         videoAssignments[v] = 'train';
+                    } else if (videoList.length >= 3 && idx === videoList.length - 1) {
+                        videoAssignments[v] = 'test_normal';
+                    } else if (videoList.length >= 2 && idx === videoList.length - 2) {
+                        videoAssignments[v] = 'val';
                     } else {
-                        videoAssignments[v] = (idx < mid) ? 'train' : 'val';
+                        videoAssignments[v] = 'train';
                     }
                 });
                 if (videoList.length === 1 && !notesMap[videoList[0]]) videoAssignments[videoList[0]] = 'train';
@@ -2237,6 +2368,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         <div class="p-3.5 bg-slate-800/40 border border-slate-800 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                             <div class="space-y-1">
                                 <div class="font-mono text-slate-200 font-bold">${escapeHtml(v)}</div>
+                                <div class="text-[10px] text-slate-500">Unidade experimental</div>
                                 ${note ? `<div class="text-[11px] text-amber-300/90 flex items-center gap-1 font-sans"><span>📝</span> <span>${escapeHtml(note)}</span></div>` : '<div class="text-[11px] text-slate-500 font-sans italic">Sem observações</div>'}
                             </div>
                             <div class="flex flex-wrap gap-2.5">
@@ -2421,6 +2553,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                             <div id="info-release-id" class="font-mono font-bold text-emerald-400 mt-0.5">--</div>
                         </div>
                         <div>
+                            <div class="text-slate-400 font-medium">Nível de Avaliação</div>
+                            <div id="info-evaluation-level" class="font-mono font-bold text-amber-300 mt-0.5">--</div>
+                        </div>
+                        <div>
                             <div class="text-slate-400 font-medium">Origens de Dados</div>
                             <div id="info-sources" class="font-mono text-slate-200 mt-0.5">--</div>
                         </div>
@@ -2578,6 +2714,8 @@ def create_web_app(workspace: Workspace) -> FastAPI:
 
                 document.getElementById('info-base-model').innerText = args.model || 'yolo26n.pt';
                 document.getElementById('info-release-id').innerText = rel.release_id || trainingId;
+                document.getElementById('info-evaluation-level').innerText =
+                    rel.evaluation_level || 'legacy';
                 document.getElementById('info-sources').innerText = (rel.sources || []).join(', ') || 'N/A';
                 document.getElementById('info-epochs').innerText = `${m.completed_epochs || 0} / ${args.epochs || '--'}`;
                 document.getElementById('info-imgsz').innerText = `${args.imgsz || '--'} px`;
@@ -2804,6 +2942,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 "release_id": rel_status["release_id"],
                 "sources": rel_status.get("sources", []),
                 "assignments": rel_status.get("assignments", {}),
+                "evaluation_level": rel_status.get("evaluation_level", "legacy"),
                 "build_report": rel_status.get("build_report") or {},
             }
         except Exception:
@@ -2819,6 +2958,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     "dataset_id": dataset["dataset_id"],
                     "sources": dataset.get("sources", []),
                     "assignments": dataset.get("splits", {}),
+                    "evaluation_level": dataset.get(
+                        "evaluation_level", "legacy"
+                    ),
                     "build_report": {
                         "images": dataset.get("images"),
                         "boxes": dataset.get("boxes"),
@@ -3049,6 +3191,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 video_pattern=req.video_pattern,
                 video_files=req.video_files or None,
                 video_notes=req.video_notes or None,
+                capture_units=req.capture_units or None,
                 annotation={"classes": req.classes},
             )
             return {"status": "ok", "path": str(path)}
@@ -3062,6 +3205,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         campaign_id: str = Form(None),
         classes: str = Form('["objeto"]'),
         video_notes: str = Form("{}"),
+        capture_units: str = Form("[]"),
         videos: list[UploadFile] = File(...),
     ):
         try:
@@ -3071,6 +3215,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             validate_id(target_id, "source_id")
             class_list = json.loads(classes)
             notes_dict = json.loads(video_notes) if video_notes else {}
+            units_list = json.loads(capture_units) if capture_units else []
             videos_dir = workspace.videos_root
             videos_dir.mkdir(parents=True, exist_ok=True)
             target_videos_dir = videos_dir / target_id
@@ -3098,6 +3243,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         video_pattern="*.mp4",
                         video_files=video_filenames,
                         video_notes=notes_dict,
+                        capture_units=units_list or None,
                         annotation={"classes": class_list},
                     )
                 except Exception:
@@ -3335,7 +3481,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             src_id = req.source_id or req.campaign_id
             if not src_id:
                 raise HTTPException(status_code=400, detail="Identificador da origem obrigatório.")
-            return preview_split_metrics(workspace, src_id, req.assignments, req.revision_id)
+            return preview_split_metrics(
+                workspace,
+                src_id,
+                req.assignments,
+                req.revision_id,
+                req.evaluation_level,
+            )
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -3349,6 +3501,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 source_ids=req.target_sources,
                 assignments=req.assignments,
                 annotation_revisions=req.annotation_revisions or None,
+                evaluation_level=req.evaluation_level,
             )
             return {"status": "ok", "path": str(path)}
         except WorkflowError as exc:

@@ -98,6 +98,103 @@ def prediction_profile_sha256(profile: dict[str, Any]) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def normalize_capture_units(
+    videos: list[Path],
+    capture_units: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Valida segmentos virtuais que representam unidades experimentais."""
+    video_names = {video.name for video in videos}
+    if not capture_units:
+        return [
+            {
+                "unit_id": video.name,
+                "source_video": video.name,
+                "start_seconds": 0.0,
+                "end_seconds": None,
+                "note": "",
+                "estimated_subjects": None,
+                "condition": None,
+            }
+            for video in videos
+        ]
+
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    by_video: dict[str, list[dict[str, Any]]] = {}
+    for raw in capture_units:
+        unit_id = str(raw.get("unit_id") or "").strip()
+        validate_id(unit_id, "unit_id")
+        if unit_id in seen_ids:
+            raise WorkflowError(f"unit_id duplicado: {unit_id}")
+        seen_ids.add(unit_id)
+        source_video = str(raw.get("source_video") or "")
+        if source_video not in video_names:
+            raise WorkflowError(
+                f"Unidade {unit_id} referencia vídeo não selecionado: {source_video}"
+            )
+        try:
+            start = float(raw.get("start_seconds", 0.0))
+            end_value = raw.get("end_seconds")
+            end = float(end_value) if end_value not in (None, "") else None
+        except (TypeError, ValueError) as exc:
+            raise WorkflowError(f"Intervalo inválido na unidade {unit_id}.") from exc
+        if start < 0 or (end is not None and end <= start):
+            raise WorkflowError(
+                f"A unidade {unit_id} deve possuir 0 <= início < fim."
+            )
+        unit = {
+            "unit_id": unit_id,
+            "source_video": source_video,
+            "start_seconds": start,
+            "end_seconds": end,
+            "note": str(raw.get("note") or ""),
+            "estimated_subjects": raw.get("estimated_subjects"),
+            "condition": raw.get("condition"),
+        }
+        normalized.append(unit)
+        by_video.setdefault(source_video, []).append(unit)
+
+    missing = sorted(video_names - by_video.keys())
+    if missing:
+        raise WorkflowError(
+            "Todo vídeo selecionado deve possuir ao menos uma unidade de captura: "
+            + ", ".join(missing)
+        )
+    for video_name, units in by_video.items():
+        ordered = sorted(units, key=lambda item: item["start_seconds"])
+        for current, following in zip(ordered, ordered[1:]):
+            if current["end_seconds"] is None:
+                raise WorkflowError(
+                    f"A unidade aberta {current['unit_id']} impede outro segmento "
+                    f"no vídeo {video_name}."
+                )
+            if current["end_seconds"] > following["start_seconds"]:
+                raise WorkflowError(
+                    f"As unidades {current['unit_id']} e {following['unit_id']} "
+                    f"se sobrepõem no vídeo {video_name}."
+                )
+    return normalized
+
+
+def source_capture_units(source: dict[str, Any]) -> list[dict[str, Any]]:
+    """Retorna unidades explícitas ou deriva uma unidade por vídeo legado."""
+    units = source.get("capture_units")
+    if isinstance(units, list) and units:
+        return [dict(item) for item in units]
+    return [
+        {
+            "unit_id": item["name"],
+            "source_video": item["name"],
+            "start_seconds": 0.0,
+            "end_seconds": None,
+            "note": item.get("note", ""),
+            "estimated_subjects": None,
+            "condition": None,
+        }
+        for item in (source.get("videos", {}).get("files") or [])
+    ]
+
+
 
 def create_source(
     defaults_or_ws: dict[str, Any] | Workspace,
@@ -108,6 +205,7 @@ def create_source(
     video_pattern: str,
     video_files: list[str] | None = None,
     video_notes: dict[str, str] | None = None,
+    capture_units: list[dict[str, Any]] | None = None,
     extraction: dict[str, Any] | None = None,
     annotation: dict[str, Any] | None = None,
 ) -> Path:
@@ -259,6 +357,7 @@ def create_source(
                 for video in videos
             ],
         },
+        "capture_units": normalize_capture_units(videos, capture_units),
         "extraction": extraction_config,
         "annotation": annotation_config,
     }
@@ -540,7 +639,10 @@ def build_import_tasks(
                 "source_id": source_id,
                 "campaign_id": source_id,
                 "source_video": frame["source_video"],
+                "unit_id": frame.get("unit_id") or frame["source_video"],
                 "frame_index": frame["frame_index"],
+                "timestamp_seconds": frame.get("timestamp_seconds"),
+                "unit_timestamp_seconds": frame.get("unit_timestamp_seconds"),
                 "original_width": frame["width"],
                 "original_height": frame["height"],
             },

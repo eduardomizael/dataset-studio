@@ -66,10 +66,93 @@ def list_versions(defaults_or_ws: dict[str, Any] | Workspace) -> list[str]:
 
 
 def source_video_keys(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> list[str]:
-    """Retorna as chaves únicas identificadoras dos vídeos contidos em uma fonte."""
+    """Retorna chaves de unidades experimentais, com fallback para vídeos legados."""
     manifest = load_frame_manifest(defaults_or_ws, source_id)
-    videos = sorted({frame["source_video"] for frame in manifest["frames"]})
-    return [f"{source_id}/{video}" for video in videos]
+    units = sorted(
+        {
+            str(frame.get("unit_id") or frame["source_video"])
+            for frame in manifest["frames"]
+        }
+    )
+    return [f"{source_id}/{unit_id}" for unit_id in units]
+
+
+def assess_split_sufficiency(
+    assignments: dict[str, list[str]],
+    unit_metrics: dict[str, dict[str, Any]],
+    evaluation_level: str,
+) -> dict[str, Any]:
+    """Produz bloqueios técnicos e alertas heurísticos por split."""
+    required = ["train"]
+    if evaluation_level != "pilot":
+        required.extend(["val", "test_normal"])
+    if evaluation_level == "robust":
+        required.append("test_stress")
+    recommended_frames = {
+        "train": 100,
+        "val": 30,
+        "test_normal": 30,
+        "test_stress": 30,
+    }
+    recommended_boxes = {
+        "train": 50,
+        "val": 10,
+        "test_normal": 10,
+        "test_stress": 10,
+    }
+    splits: dict[str, Any] = {}
+    blocking: list[str] = []
+    warnings: list[str] = []
+    for split in SPLITS:
+        keys = assignments.get(split) or []
+        frames = sum(
+            int(
+                (unit_metrics.get(key) or {}).get(
+                    "included",
+                    (unit_metrics.get(key) or {}).get("completed", 0),
+                )
+                or 0
+            )
+            for key in keys
+        )
+        boxes = sum(
+            int((unit_metrics.get(key) or {}).get("boxes", 0) or 0)
+            for key in keys
+        )
+        splits[split] = {
+            "units": len(keys),
+            "frames": frames,
+            "boxes": boxes,
+        }
+        if split in required and not keys:
+            blocking.append(f"{split}: nenhuma unidade experimental atribuída")
+        elif split in required and frames == 0:
+            blocking.append(f"{split}: nenhuma imagem utilizável")
+        if keys and frames < recommended_frames[split]:
+            warnings.append(
+                f"{split}: somente {frames} frames; referência heurística "
+                f"de {recommended_frames[split]} ou mais"
+            )
+        if keys and boxes < recommended_boxes[split]:
+            warnings.append(
+                f"{split}: somente {boxes} caixas; referência heurística "
+                f"de {recommended_boxes[split]} ou mais"
+            )
+    if evaluation_level == "pilot":
+        warnings.append(
+            "Versão piloto: métricas não comprovam generalização independente."
+        )
+    elif not assignments.get("test_stress"):
+        warnings.append(
+            "Sem teste de estresse: o relatório não medirá robustez em condições difíceis."
+        )
+    return {
+        "evaluation_level": evaluation_level,
+        "splits": splits,
+        "blocking": blocking,
+        "warnings": warnings,
+        "threshold_kind": "heuristic_advisory",
+    }
 
 
 
@@ -82,6 +165,7 @@ def create_version(
     campaign_ids: list[str] | None = None,
     assignments: dict[str, list[str]],
     annotation_revisions: dict[str, str] | None = None,
+    evaluation_level: str = "standard",
 ) -> Path:
     """Cria o manifesto inicial de configuração para uma nova versão de dataset."""
     target_id = version_id or release_id
@@ -108,6 +192,7 @@ def create_version(
     defaults_classes = list(first_source["annotation"]["classes"])
 
     selected_revisions: dict[str, str] = {}
+    unit_metrics: dict[str, dict[str, Any]] = {}
     provisional = False
     for src_id in targets:
         source = load_source(defaults_or_ws, src_id)
@@ -130,14 +215,57 @@ def create_version(
         selected_revisions[src_id] = revision_id
         provisional = provisional or report.get("snapshot_type") == "provisional"
         expected.update(source_video_keys(defaults_or_ws, src_id))
+        for unit_id, metrics in (
+            report.get("per_unit") or report.get("per_video") or {}
+        ).items():
+            unit_metrics[f"{src_id}/{unit_id}"] = metrics
 
     assigned = [key for split in SPLITS for key in assignments.get(split, [])]
     if len(assigned) != len(set(assigned)):
         raise WorkflowError("Um video foi atribuido a mais de um split.")
     if set(assigned) != expected:
         raise WorkflowError("Todos os videos devem ser atribuidos exatamente uma vez.")
-    if not assignments.get("train") or not assignments.get("val"):
-        raise WorkflowError("A versao exige ao menos um video em train e val.")
+    if evaluation_level not in {"pilot", "standard", "robust"}:
+        raise WorkflowError(
+            "evaluation_level deve ser pilot, standard ou robust."
+        )
+    if not assignments.get("train"):
+        raise WorkflowError(
+            "A versão exige ao menos uma unidade experimental em train."
+        )
+    if evaluation_level != "pilot":
+        missing = [
+            split
+            for split in ("val", "test_normal")
+            if not assignments.get(split)
+        ]
+        if missing:
+            raise WorkflowError(
+                "Uma versão avaliável exige unidades independentes em train, "
+                "val e test_normal. Ausentes: " + ", ".join(missing)
+            )
+    if evaluation_level == "robust" and not assignments.get("test_stress"):
+        raise WorkflowError(
+            "Uma versão robusta exige ao menos uma unidade em test_stress."
+        )
+    effective_level = (
+        "pilot"
+        if evaluation_level == "pilot"
+        else "robust"
+        if assignments.get("test_stress")
+        else "standard"
+    )
+    provisional = provisional or effective_level == "pilot"
+    quality_assessment = assess_split_sufficiency(
+        assignments,
+        unit_metrics,
+        effective_level,
+    )
+    if quality_assessment["blocking"]:
+        raise WorkflowError(
+            "A versão não pode ser materializada: "
+            + "; ".join(quality_assessment["blocking"])
+        )
 
     root.mkdir(parents=True)
     payload = {
@@ -149,6 +277,8 @@ def create_version(
         "campaigns": targets,
         "annotation_revisions": selected_revisions,
         "provisional": provisional,
+        "evaluation_level": effective_level,
+        "quality_assessment": quality_assessment,
         "assignments": {split: assignments.get(split, []) for split in SPLITS},
         "materialization": "copy",
         "classes": defaults_classes,
@@ -191,7 +321,8 @@ def _materialize_version(
         images_dir = source_root(defaults_or_ws, src_id) / "frames" / "raw" / "images"
         for frame in manifest["frames"]:
             frame_id = frame["frame_id"]
-            split = split_by_video[f"{src_id}/{frame['source_video']}"]
+            unit_id = str(frame.get("unit_id") or frame["source_video"])
+            split = split_by_video[f"{src_id}/{unit_id}"]
             source_image = images_dir / frame["image"]
             if not source_image.exists():
                 raise WorkflowError(f"Imagem ausente ao materializar: {source_image}")
@@ -203,7 +334,14 @@ def _materialize_version(
                         "campaign_id": src_id,
                         "frame_id": frame_id,
                         "source_video": frame["source_video"],
+                        "unit_id": unit_id,
                         "frame_index": str(frame["frame_index"]),
+                        "timestamp_seconds": str(
+                            frame.get("timestamp_seconds", "")
+                        ),
+                        "unit_timestamp_seconds": str(
+                            frame.get("unit_timestamp_seconds", "")
+                        ),
                         "split": split,
                         "included": "false",
                         "exclusion_reason": str(annotation.exclusion_reason),
@@ -229,7 +367,14 @@ def _materialize_version(
                     "campaign_id": src_id,
                     "frame_id": frame_id,
                     "source_video": frame["source_video"],
+                    "unit_id": unit_id,
                     "frame_index": str(frame["frame_index"]),
+                    "timestamp_seconds": str(
+                        frame.get("timestamp_seconds", "")
+                    ),
+                    "unit_timestamp_seconds": str(
+                        frame.get("unit_timestamp_seconds", "")
+                    ),
                     "split": split,
                     "included": "true",
                     "exclusion_reason": "",
@@ -244,7 +389,12 @@ def _materialize_version(
 
     included_rows = [row for row in rows if row["included"] == "true"]
     included_splits = Counter(row["split"] for row in included_rows)
-    for required_split in ("train", "val"):
+    required_splits = (
+        ("train",)
+        if version.get("evaluation_level") == "pilot"
+        else ("train", "val", "test_normal")
+    )
+    for required_split in required_splits:
         if not included_splits[required_split]:
             raise WorkflowError(
                 f"O split {required_split} ficou sem frames utilizaveis apos as exclusoes."
@@ -271,7 +421,11 @@ def _materialize_version(
     data_yaml = {
         "path": str(final_root.resolve()),
         "train": "images/train",
-        "val": "images/val",
+        "val": (
+            "images/val"
+            if included_splits.get("val")
+            else "images/train"
+        ),
         "names": names,
     }
     if version["assignments"].get("test_normal"):
@@ -287,6 +441,20 @@ def _materialize_version(
         "version_id": version_id,
         "release_id": version_id,
         "provisional": bool(version.get("provisional", False)),
+        "evaluation_level": version.get("evaluation_level", "legacy"),
+        "quality_assessment": version.get("quality_assessment", {}),
+        "warnings": list(
+            (version.get("quality_assessment") or {}).get("warnings") or []
+        )
+        + (
+            [
+                "Versão piloto: a validação reutiliza o split de treino e não "
+                "mede generalização."
+            ]
+            if version.get("evaluation_level") == "pilot"
+            and not included_splits.get("val")
+            else []
+        ),
         "annotation_revisions": version.get("annotation_revisions", {}),
         "built_at": utc_now(),
         "source_frames": len(rows),

@@ -100,6 +100,15 @@ def register_source_manifest(
     source = load_yaml(manifest)
     if (source.get("source_id") or source.get("campaign_id")) != source_id:
         raise WorkflowError(f"Identificador divergente em {manifest}.")
+    capture_units = source.get("capture_units") or [
+        {
+            "unit_id": item.get("name"),
+            "source_video": item.get("name"),
+            "start_seconds": 0.0,
+            "end_seconds": None,
+        }
+        for item in (source.get("videos", {}).get("files") or [])
+    ]
     record = {
         "schema_version": 1,
         "source_id": source_id,
@@ -117,6 +126,15 @@ def register_source_manifest(
                 "sha256": item.get("sha256"),
             }
             for item in (source.get("videos", {}).get("files") or [])
+        ],
+        "capture_units": [
+            {
+                "unit_id": item.get("unit_id"),
+                "source_video": item.get("source_video"),
+                "start_seconds": item.get("start_seconds"),
+                "end_seconds": item.get("end_seconds"),
+            }
+            for item in capture_units
         ],
         "extraction_model_sha256": (source.get("extraction") or {}).get(
             "model_sha256"

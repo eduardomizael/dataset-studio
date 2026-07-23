@@ -56,6 +56,84 @@ def test_uniform_extraction_uses_source_configuration(tmp_path: Path):
     assert [frame["frame_index"] for frame in manifest["frames"]] == [0, 3, 6, 9]
 
 
+def test_one_video_can_be_split_into_independent_capture_units(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    _write_video(videos / "continuous.avi", frame_count=12)
+    create_source(
+        ws,
+        source_id="segmented_source",
+        videos_dir=videos,
+        video_pattern="*.avi",
+        capture_units=[
+            {
+                "unit_id": "leva_01",
+                "source_video": "continuous.avi",
+                "start_seconds": 0.0,
+                "end_seconds": 0.4,
+            },
+            {
+                "unit_id": "leva_02",
+                "source_video": "continuous.avi",
+                "start_seconds": 0.4,
+                "end_seconds": 0.8,
+            },
+            {
+                "unit_id": "leva_03",
+                "source_video": "continuous.avi",
+                "start_seconds": 0.8,
+                "end_seconds": 1.2,
+            },
+        ],
+        extraction={"mode": "uniform", "uniform_frame_step": 2},
+        annotation={"classes": ["objeto"]},
+    )
+
+    extract_source_frames(ws, "segmented_source")
+    manifest = load_frame_manifest(ws, "segmented_source")
+    by_unit = {}
+    for frame in manifest["frames"]:
+        by_unit.setdefault(frame["unit_id"], []).append(frame)
+
+    assert set(by_unit) == {"leva_01", "leva_02", "leva_03"}
+    assert [frame["frame_index"] for frame in by_unit["leva_01"]] == [0, 2]
+    assert [frame["frame_index"] for frame in by_unit["leva_02"]] == [4, 6]
+    assert [frame["frame_index"] for frame in by_unit["leva_03"]] == [8, 10]
+    assert by_unit["leva_02"][0]["timestamp_seconds"] == pytest.approx(0.4)
+    assert by_unit["leva_02"][0]["unit_timestamp_seconds"] == pytest.approx(0.0)
+
+
+def test_capture_units_reject_temporal_overlap(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    (videos / "continuous.mp4").write_bytes(b"video")
+
+    with pytest.raises(WorkflowError, match="se sobrepõem"):
+        create_source(
+            ws,
+            source_id="overlap_source",
+            videos_dir=videos,
+            video_pattern="*.mp4",
+            capture_units=[
+                {
+                    "unit_id": "leva_01",
+                    "source_video": "continuous.mp4",
+                    "start_seconds": 0,
+                    "end_seconds": 10,
+                },
+                {
+                    "unit_id": "leva_02",
+                    "source_video": "continuous.mp4",
+                    "start_seconds": 9,
+                    "end_seconds": 20,
+                },
+            ],
+            annotation={"classes": ["objeto"]},
+        )
+
+
 def test_upload_is_isolated_and_rejects_path_traversal(tmp_path: Path):
     ws = Workspace.from_path(tmp_path)
     client = TestClient(create_web_app(ws))

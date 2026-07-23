@@ -61,6 +61,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     sc.add_argument("--videos-dir", type=Path, default=Path("videos"), help="Diretório de vídeos")
     sc.add_argument("--pattern", default="*.mp4", help="Padrão glob de vídeos")
     sc.add_argument("--classes", nargs="+", default=["objeto"], help="Lista de classes")
+    sc.add_argument(
+        "--capture-units-json",
+        default=None,
+        help="JSON com segmentos virtuais (unit_id, source_video, início e fim).",
+    )
 
     source_sub.add_parser("list", help="Listar Origens de dados")
 
@@ -86,6 +91,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     vc.add_argument("--id", required=True, help="ID único da Versão")
     vc.add_argument("--sources", "--campaigns", dest="sources", nargs="+", required=True, help="Origens a incluir")
     vc.add_argument("--assignments-json", required=True, help="JSON de atribuição de vídeos aos splits")
+    vc.add_argument(
+        "--evaluation-level",
+        choices=("pilot", "standard", "robust"),
+        default="standard",
+    )
 
     vb = version_sub.add_parser("build", help="Materializar Versão em disco")
     vb.add_argument("--id", required=True, help="ID da Versão")
@@ -166,6 +176,11 @@ def main(args: list[str] | None = None) -> int:
                 source_id=parsed.id,
                 videos_dir=parsed.videos_dir,
                 video_pattern=parsed.pattern,
+                capture_units=(
+                    json.loads(parsed.capture_units_json)
+                    if parsed.capture_units_json
+                    else None
+                ),
                 annotation={"classes": parsed.classes},
             )
             print(f"[OK] Origem criada em: {path}")
@@ -200,6 +215,7 @@ def main(args: list[str] | None = None) -> int:
                 version_id=parsed.id,
                 source_ids=parsed.sources,
                 assignments=assignments,
+                evaluation_level=parsed.evaluation_level,
             )
             print(f"[OK] Versão configurada em: {path}")
         elif parsed.subcommand == "build":

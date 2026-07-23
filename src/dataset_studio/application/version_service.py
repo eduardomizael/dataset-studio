@@ -10,6 +10,7 @@ from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTraine
 from dataset_studio.domain import (
     Workspace,
     WorkflowError,
+    assess_split_sufficiency,
     list_annotation_revisions,
     load_annotation_revision_report,
     load_yaml,
@@ -24,6 +25,7 @@ def preview_split_metrics(
     source_id: str,
     assignments: dict[str, list[str]],
     revision_id: str | None = None,
+    evaluation_level: str = "standard",
 ) -> dict[str, Any]:
     """Calcula a prévia das métricas de contagem (vídeos, frames e boxes) para cada split."""
 
@@ -39,7 +41,7 @@ def preview_split_metrics(
         }
 
     report = load_annotation_revision_report(ws, source_id, target_rev)
-    per_video = report.get("per_video", {})
+    per_video = report.get("per_unit") or report.get("per_video", {})
 
     def sum_metrics(v_list: list[str]) -> dict[str, int]:
         total_f = 0
@@ -51,12 +53,22 @@ def preview_split_metrics(
             total_b += v_data.get("boxes", 0)
         return {"videos": len(v_list), "frames": total_f, "boxes": total_b}
 
-    return {
+    split_metrics = {
         "train": sum_metrics(assignments.get("train", [])),
         "val": sum_metrics(assignments.get("val", [])),
         "test_normal": sum_metrics(assignments.get("test_normal", [])),
         "test_stress": sum_metrics(assignments.get("test_stress", [])),
     }
+    unit_metrics = {
+        f"{source_id}/{unit_id}": metrics
+        for unit_id, metrics in per_video.items()
+    }
+    split_metrics["quality_assessment"] = assess_split_sufficiency(
+        assignments,
+        unit_metrics,
+        evaluation_level,
+    )
+    return split_metrics
 
 
 def training_recipe(ws: Workspace, version_id: str, params: TrainingParams | None = None) -> dict[str, Any]:

@@ -76,6 +76,7 @@ def create_materialized_release(tmp_path: Path) -> Workspace:
         release_id="rel1",
         campaign_ids=["camp1"],
         assignments={"train": ["camp1/video1.mp4"], "val": ["camp1/video2.mp4"]},
+        evaluation_level="pilot",
     )
     build_release(ws, "rel1")
     return ws

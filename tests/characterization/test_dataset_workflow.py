@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import csv
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from dataset_studio.domain import (
     label_studio_region_id,
     list_annotation_revisions,
     load_campaign,
+    load_yaml,
     parse_native_export,
 )
 
@@ -334,6 +336,7 @@ def test_partial_annotation_revisions_are_append_only_and_reusable(tmp_path: Pat
             "test_normal": [],
             "test_stress": [],
         },
+        evaluation_level="pilot",
     )
     partial_manifest = build_release(config, "partial_release")
     partial_report = json.loads(
@@ -416,6 +419,7 @@ def test_release_is_built_from_accepted_json_and_split_by_whole_video(tmp_path: 
             "test_normal": [],
             "test_stress": [],
         },
+        evaluation_level="pilot",
     )
 
     manifest = build_release(config, "dataset_v1")
@@ -427,10 +431,114 @@ def test_release_is_built_from_accepted_json_and_split_by_whole_video(tmp_path: 
     assert train_label.read_text(encoding="utf-8").startswith("0 0.500000 0.500000")
     assert val_label.read_text(encoding="utf-8") == ""
     assert not (release / "images" / "train" / f"capture_test__{extra_id}.jpg").exists()
-    manifest_text = manifest.read_text(encoding="utf-8")
-    assert f"{extra_id},normal.mp4,2,train,false,skipped_or_cancelled" in manifest_text
+    with manifest.open("r", encoding="utf-8", newline="") as handle:
+        excluded_row = next(
+            row for row in csv.DictReader(handle) if row["frame_id"] == extra_id
+        )
+    assert excluded_row["source_video"] == "normal.mp4"
+    assert excluded_row["split"] == "train"
+    assert excluded_row["included"] == "false"
+    assert excluded_row["exclusion_reason"] == "skipped_or_cancelled"
     report = json.loads((release / "build_report.json").read_text(encoding="utf-8"))
     assert report["excluded_frames"] == 1
     assert (release / "data.yaml").exists()
     with pytest.raises(WorkflowError, match="imutavel"):
         build_release(config, "dataset_v1")
+
+
+def test_standard_release_requires_independent_train_val_and_test_units(
+    tmp_path: Path,
+):
+    config, _campaign = create_fixture_campaign(tmp_path)
+    export = tmp_path / "export.json"
+    export.write_text(json.dumps(native_export()), encoding="utf-8")
+    accept_native_export(config, "capture_test", export)
+
+    with pytest.raises(WorkflowError, match="train, val e test_normal"):
+        create_release(
+            config,
+            release_id="invalid_standard",
+            campaign_ids=["capture_test"],
+            assignments={
+                "train": ["capture_test/normal.mp4"],
+                "val": ["capture_test/validation.mp4"],
+                "test_normal": [],
+                "test_stress": [],
+            },
+        )
+
+
+def test_single_capture_unit_can_materialize_an_explicit_pilot(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    videos = ws.videos_root
+    videos.mkdir()
+    (videos / "single.mp4").write_bytes(b"single-video")
+    create_campaign(
+        ws,
+        campaign_id="single_source",
+        videos_dir=videos,
+        video_pattern="*.mp4",
+        annotation={"classes": ["objeto"]},
+    )
+    image_root = ws.source_root("single_source") / "frames" / "raw" / "images"
+    (image_root / "single_f000001.jpg").write_bytes(b"image")
+    frame_manifest_path(ws, "single_source").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "frames": [
+                    {
+                        "frame_id": "single_f000001",
+                        "image": "single_f000001.jpg",
+                        "source_video": "single.mp4",
+                        "frame_index": 1,
+                        "width": 100,
+                        "height": 100,
+                        "predictions": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    export = tmp_path / "single_export.json"
+    export.write_text(
+        json.dumps(
+            [
+                {
+                    "data": {"frame_id": "single_f000001"},
+                    "annotations": [{"was_cancelled": False, "result": []}],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    accept_native_export(
+        ws,
+        "single_source",
+        export,
+        revision_id="single_revision",
+    )
+    create_release(
+        ws,
+        release_id="single_pilot",
+        campaign_ids=["single_source"],
+        annotation_revisions={"single_source": "single_revision"},
+        assignments={
+            "train": ["single_source/single.mp4"],
+            "val": [],
+            "test_normal": [],
+            "test_stress": [],
+        },
+        evaluation_level="pilot",
+    )
+
+    manifest = build_release(ws, "single_pilot")
+    data = load_yaml(manifest.parent / "data.yaml")
+    report = json.loads(
+        (manifest.parent / "build_report.json").read_text(encoding="utf-8")
+    )
+    assert data["val"] == "images/train"
+    assert report["evaluation_level"] == "pilot"
+    assert report["provisional"] is True
+    assert any("não comprovam generalização" in item for item in report["warnings"])

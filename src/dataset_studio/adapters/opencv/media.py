@@ -9,7 +9,14 @@ from typing import Any
 import cv2
 
 from dataset_studio.adapters.ultralytics.predictor import UltralyticsPredictor
-from dataset_studio.domain import WorkflowError, Workspace, frame_manifest_path, load_source, sha256
+from dataset_studio.domain import (
+    WorkflowError,
+    Workspace,
+    frame_manifest_path,
+    load_source,
+    sha256,
+    source_capture_units,
+)
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -90,6 +97,9 @@ def prediction_record(
     frame_name: str,
     source_video: str,
     frame_index: int,
+    unit_id: str | None = None,
+    timestamp_seconds: float | None = None,
+    unit_timestamp_seconds: float | None = None,
     frame,
     detections: list[tuple[int, tuple]],
 ) -> dict[str, Any]:
@@ -100,7 +110,10 @@ def prediction_record(
         "frame_id": frame_name,
         "image": f"{frame_name}.jpg",
         "source_video": source_video,
+        "unit_id": unit_id or source_video,
         "frame_index": frame_index,
+        "timestamp_seconds": timestamp_seconds,
+        "unit_timestamp_seconds": unit_timestamp_seconds,
         "width": width,
         "height": height,
         "predictions": [
@@ -116,19 +129,29 @@ def prediction_record(
     }
 
 
-def scan_video(video_path: Path, predictor: UltralyticsPredictor, scan_step: int) -> list[int]:
+def scan_video(
+    video_path: Path,
+    predictor: UltralyticsPredictor,
+    scan_step: int,
+    *,
+    start_frame: int = 0,
+    end_frame: int | None = None,
+) -> list[int]:
     """Escaneia um vídeo com amostragem para detectar a presença de alvos (peixes)."""
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return []
     fish_frames: list[int] = []
-    frame_idx = 0
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    frame_idx = start_frame
     while True:
+        if end_frame is not None and frame_idx >= end_frame:
+            break
         ret, frame = cap.read()
         if not ret:
             break
-        if frame_idx % scan_step == 0:
+        if (frame_idx - start_frame) % scan_step == 0:
             dets = predictor.predict(frame)
             if dets:
                 fish_frames.append(frame_idx)
@@ -169,20 +192,40 @@ def run_uniform_mode(
     images_out: Path,
     labels_out: Path | None,
     records: list[dict],
+    *,
+    unit_id: str | None = None,
+    start_seconds: float = 0.0,
+    end_seconds: float | None = None,
 ) -> dict[str, int]:
     """Executa a extração no modo uniforme com passo de amostragem constante."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return {"saved": 0, "analyzed": 0}
-    video_stem = video_path.stem
-    frame_idx = 0
+    fps = float(cap.get(cv2.CAP_PROP_FPS)) or 1.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    start_frame = max(0, int(round(start_seconds * fps)))
+    end_frame = (
+        min(total_frames, int(round(end_seconds * fps)))
+        if end_seconds is not None
+        else total_frames
+    )
+    if start_frame >= total_frames or start_frame >= end_frame:
+        cap.release()
+        raise WorkflowError(
+            f"A unidade {unit_id or video_path.name} está fora da duração do vídeo."
+        )
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    video_stem = video_path.stem if not unit_id or unit_id == video_path.name else unit_id
+    frame_idx = start_frame
     saved = 0
     analyzed = 0
     while True:
+        if frame_idx >= end_frame:
+            break
         ret, frame = cap.read()
         if not ret:
             break
-        if frame_idx % frame_step == 0:
+        if (frame_idx - start_frame) % frame_step == 0:
             analyzed += 1
             frame_name = f"{video_stem}_f{frame_idx:06d}"
             save_frame(frame, [], frame_name, images_out, labels_out)
@@ -191,6 +234,9 @@ def run_uniform_mode(
                     frame_name=frame_name,
                     source_video=video_path.name,
                     frame_index=frame_idx,
+                    unit_id=unit_id,
+                    timestamp_seconds=frame_idx / fps,
+                    unit_timestamp_seconds=(frame_idx - start_frame) / fps,
                     frame=frame,
                     detections=[],
                 )
@@ -220,6 +266,9 @@ def run_smart_mode(
     max_negatives_per_video: int,
     images_out: Path,
     records: list[dict],
+    unit_id: str | None = None,
+    start_seconds: float = 0.0,
+    end_seconds: float | None = None,
 ) -> dict[str, int]:
     """Extrai mais frames nas regiões com objetos e negativos esparsos fora delas."""
 
@@ -227,35 +276,64 @@ def run_smart_mode(
     if not cap.isOpened():
         return {"fish": 0, "negative": 0, "analyzed": 0}
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = float(cap.get(cv2.CAP_PROP_FPS)) or 1.0
+    start_frame = max(0, int(round(start_seconds * fps)))
+    end_frame = (
+        min(total_frames, int(round(end_seconds * fps)))
+        if end_seconds is not None
+        else total_frames
+    )
+    if start_frame >= total_frames or start_frame >= end_frame:
+        cap.release()
+        raise WorkflowError(
+            f"A unidade {unit_id or video_path.name} está fora da duração do vídeo."
+        )
     cap.release()
 
-    detected_frames = scan_video(video_path, predictor, scan_step)
-    detected_ranges = find_fish_ranges(detected_frames, margin, total_frames)
+    detected_frames = scan_video(
+        video_path,
+        predictor,
+        scan_step,
+        start_frame=start_frame,
+        end_frame=end_frame,
+    )
+    detected_ranges = find_fish_ranges(detected_frames, margin, end_frame)
     cap = cv2.VideoCapture(str(video_path))
-    frame_idx = 0
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    frame_idx = start_frame
     negative_count = 0
     stats = {"fish": 0, "negative": 0, "analyzed": 0}
     while True:
+        if frame_idx >= end_frame:
+            break
         ok, frame = cap.read()
         if not ok:
             break
         in_detection_range = is_in_ranges(frame_idx, detected_ranges)
         should_extract = (
-            in_detection_range and frame_idx % dense_step == 0
+            in_detection_range and (frame_idx - start_frame) % dense_step == 0
         ) or (
             not in_detection_range
-            and frame_idx % sparse_step == 0
+            and (frame_idx - start_frame) % sparse_step == 0
             and negative_count < max_negatives_per_video
         )
         if should_extract:
             detections = _formatted_detections(predictor, frame)
-            frame_name = f"{video_path.stem}_f{frame_idx:06d}"
+            frame_prefix = (
+                video_path.stem
+                if not unit_id or unit_id == video_path.name
+                else unit_id
+            )
+            frame_name = f"{frame_prefix}_f{frame_idx:06d}"
             save_frame(frame, detections, frame_name, images_out, None)
             records.append(
                 prediction_record(
                     frame_name=frame_name,
                     source_video=video_path.name,
                     frame_index=frame_idx,
+                    unit_id=unit_id,
+                    timestamp_seconds=frame_idx / fps,
+                    unit_timestamp_seconds=(frame_idx - start_frame) / fps,
                     frame=frame,
                     detections=detections,
                 )
@@ -310,8 +388,8 @@ def extract_source_frames(
                 "Ultralytics nao esta instalado. Execute: uv sync --all-extras"
             ) from exc
 
-    for v_file in source_data["videos"]["files"]:
-        video_path = videos_dir / v_file["name"]
+    for unit in source_capture_units(source_data):
+        video_path = videos_dir / unit["source_video"]
         if video_path.is_file():
             if mode == "smart":
                 assert predictor is not None
@@ -325,22 +403,35 @@ def extract_source_frames(
                     max_negatives_per_video=int(extraction.get("max_negatives_per_video", 15)),
                     images_out=images_out,
                     records=records,
+                    unit_id=unit["unit_id"],
+                    start_seconds=float(unit.get("start_seconds") or 0.0),
+                    end_seconds=unit.get("end_seconds"),
                 )
             else:
                 frame_step = int(
                     extraction.get("uniform_frame_step", extraction.get("frame_step", 30))
                 )
-                run_uniform_mode(video_path, frame_step, images_out, None, records)
+                run_uniform_mode(
+                    video_path,
+                    frame_step,
+                    images_out,
+                    None,
+                    records,
+                    unit_id=unit["unit_id"],
+                    start_seconds=float(unit.get("start_seconds") or 0.0),
+                    end_seconds=unit.get("end_seconds"),
+                )
 
     records_by_id = {str(item["frame_id"]): item for item in records}
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model": str(extraction.get("model")) if extraction.get("model") else None,
         "model_sha256": sha256(model_path) if model_path and model_path.is_file() else None,
         "confidence": extraction.get("confidence", extraction.get("confidence_threshold")),
         "mode": mode,
         "video_pattern": source_data["videos"].get("pattern"),
         "video_files": [f["name"] for f in source_data["videos"]["files"]],
+        "capture_units": source_capture_units(source_data),
         "frame_step": extraction.get("uniform_frame_step", extraction.get("frame_step")),
         "frames": [records_by_id[key] for key in sorted(records_by_id)],
     }

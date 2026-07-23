@@ -164,6 +164,8 @@ def snapshot_version_dataset(ws: Workspace, version_id: str) -> dict[str, Any]:
         "sources": list(config.get("sources") or config.get("campaigns") or []),
         "annotation_revisions": config.get("annotation_revisions", {}),
         "provisional": bool(config.get("provisional", False)),
+        "evaluation_level": config.get("evaluation_level", "legacy"),
+        "quality_assessment": config.get("quality_assessment", {}),
         "images": report.get("images"),
         "boxes": report.get("boxes"),
         "excluded_frames": report.get("excluded_frames"),

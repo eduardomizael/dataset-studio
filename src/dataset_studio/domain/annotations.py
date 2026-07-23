@@ -203,10 +203,16 @@ def parse_native_export(
         video: Counter()
         for video in sorted({frame["source_video"] for frame in expected.values()})
     }
+    per_unit: dict[str, Counter[str]] = {
+        str(frame.get("unit_id") or frame["source_video"]): Counter()
+        for frame in expected.values()
+    }
     for frame_id in sorted(expected) if isinstance(tasks, list) else []:
         frame = expected[frame_id]
         video_stats = per_video[frame["source_video"]]
+        unit_stats = per_unit[str(frame.get("unit_id") or frame["source_video"])]
         video_stats["source_frames"] += 1
+        unit_stats["source_frames"] += 1
         task = by_frame.get(frame_id)
         if task is None:
             parsed[frame_id] = AnnotationFrame(
@@ -219,6 +225,7 @@ def parse_native_export(
             excluded += 1
             exclusion_reasons["deferred"] += 1
             video_stats["deferred"] += 1
+            unit_stats["deferred"] += 1
             continue
         annotation, cancelled_reason = _select_human_annotation(
             task, frame_id, allow_pending=allow_pending
@@ -234,6 +241,7 @@ def parse_native_export(
             excluded += 1
             exclusion_reasons[str(cancelled_reason)] += 1
             video_stats[str(cancelled_reason)] += 1
+            unit_stats[str(cancelled_reason)] += 1
             continue
         rows = tuple(
             _result_to_yolo(result, frame_id=frame_id, class_to_id=class_to_id)
@@ -247,6 +255,9 @@ def parse_native_export(
         video_stats["completed"] += 1
         video_stats["boxes"] += len(rows)
         video_stats["confirmed_negatives" if not rows else "positive_frames"] += 1
+        unit_stats["completed"] += 1
+        unit_stats["boxes"] += len(rows)
+        unit_stats["confirmed_negatives" if not rows else "positive_frames"] += 1
     deferred = exclusion_reasons["deferred"]
     class_counts: Counter[str] = Counter()
     for frame_obj in parsed.values():
@@ -290,6 +301,21 @@ def parse_native_export(
                 )
             }
             for video, stats in per_video.items()
+        },
+        "per_unit": {
+            unit_id: {
+                key: stats[key]
+                for key in (
+                    "source_frames",
+                    "completed",
+                    "positive_frames",
+                    "confirmed_negatives",
+                    "skipped_or_cancelled",
+                    "deferred",
+                    "boxes",
+                )
+            }
+            for unit_id, stats in per_unit.items()
         },
     }
     return parsed, report
