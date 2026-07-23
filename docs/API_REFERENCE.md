@@ -300,6 +300,11 @@ Valida referências e SHA-256 de datasets, runs, modelos, aliases e artefatos.
 
 ### GET /api/registry/models
 
+### GET /api/registry/sources
+
+Retorna o índice derivado das origens, incluindo caminho e SHA-256 do
+`source.yaml` canônico. Os dados operacionais continuam no diretório da origem.
+
 Retorna o catálogo de modelos e o mapa de aliases físicos.
 
 ### DELETE /api/trainings/{training_id}?confirm={training_id}

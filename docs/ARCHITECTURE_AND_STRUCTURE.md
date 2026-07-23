@@ -129,7 +129,8 @@ dataset-studio/
 Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspace configurado:
 
 1. **`dataset/sources/<source_id>/`**:
-   - `source.yaml`: Vídeos, hashes, extração, classes e backend de anotação.
+   - `source.yaml`: Vídeos, hashes, extração, classes, backend de anotação e
+     perfil de predição congelado.
    - `frames/raw/images/`: Imagens extraídas dos vídeos.
    - `frame_manifest.json`: Registro estruturado dos frames e predições.
    - `label_studio/import_tasks.json`: Tarefas geradas para importação.
@@ -161,9 +162,14 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
    - `workflow_job.json`: Estado persistido, parâmetros e `version_id` de origem.
    - `train.log`, `results.csv`, `args.yaml`, gráficos e `weights/best.pt`.
    - `run.yaml`: Manifest consolidado do treinamento.
+   - `evaluations/summary.json`: Métricas finais de `test_normal`,
+     `test_stress` e queda de robustez.
    - `provenance/`: Snapshot da versão consumida pelo treinamento.
 
 7. **`registry/`**:
+   - É um catálogo derivado; os manifestos junto dos recursos continuam
+     canônicos.
+   - `sources/<source_id>.yaml`: Referência e hash do `source.yaml`.
    - `models.yaml`: Identidades lógicas, hashes, pais, origem e estado dos modelos.
    - `aliases.yaml`: Caminhos físicos associados a cada `model_id`.
    - `datasets/<dataset_id>.yaml`: Manifests nativos ou reconstruídos.
@@ -187,6 +193,8 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
 - `manifest.csv` registra hashes da imagem de origem, imagem materializada e label; `build_report.json` registra os hashes do manifesto e da configuração.
 - Antes do treinamento, a versão e o modelo inicial são fixados no registry por
   ID e SHA-256. Ao terminar, métricas e hashes dos checkpoints são consolidados.
+- Depois do treino, o mesmo `best.pt` é avaliado em `test_normal` e
+  `test_stress`. Nenhum teste participa da otimização ou da escolha do peso.
 - Um alias não cria um novo modelo: pesos byte a byte idênticos compartilham o
   mesmo `model_id`.
 - Exclusão é uma operação destrutiva explícita, separada da imutabilidade durante o ciclo normal.
@@ -195,6 +203,9 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
 
 - O Label Studio usa a porta 8080 e recebe o workspace como document root para arquivos locais.
 - A API oficial do Label Studio cria ou reconhece o projeto, configura a fila e evita ajustes repetitivos por origem.
-- O ML Backend usa a porta 9090, valida `/health` antes de a API declarar sucesso e carrega modelo, classes, confiança, device e ROI da origem.
+- O ML Backend usa a porta 9090, valida `/health` antes de a API declarar
+  sucesso e carrega modelo, classes, confiança, device e ROI do perfil
+  congelado na origem. Arquivos em `config/` são templates usados apenas na
+  criação; mudanças posteriores não alteram origens existentes.
 - O treinador chama `sys.executable` do próprio Dataset Studio. Nenhum caminho para outro repositório é permitido.
 - No Windows, o extra `cuda` resolve PyTorch pelo índice oficial CUDA 12.8 configurado em `pyproject.toml`.

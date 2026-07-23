@@ -1,18 +1,27 @@
-# Registry de datasets, treinamentos e modelos
+# Catálogo de linhagem de origens, datasets, treinamentos e modelos
 
-O registry é a fonte estruturada de proveniência do Dataset Studio. Ele não
-substitui os artefatos físicos; relaciona versões de dataset, execuções,
-checkpoints, aliases e estados por identificadores estáveis e SHA-256.
+O registry é o índice global derivado de proveniência do Dataset Studio. Ele
+não substitui os manifestos que vivem junto de cada recurso; relaciona origens,
+versões de dataset, execuções, checkpoints, aliases e estados por
+identificadores estáveis e SHA-256.
+
+As fontes canônicas são `source.yaml`, `version.yaml`, `run.yaml` e
+`deployment_manifest.yaml`. O catálogo existe separado porque relações como
+modelo-pai, aliases e uso de um dataset por vários treinamentos atravessam
+diretórios. Cada entrada derivada aponta de volta para o manifesto canônico.
 
 ## Estrutura
 
 ```text
 registry/
+├── README.md
 ├── models.yaml
 ├── aliases.yaml
 ├── migration_report.json
 ├── datasets/
 │   └── <dataset_id>.yaml
+├── sources/
+│   └── <source_id>.yaml
 └── runs/
     └── <training_id>.yaml
 ```
@@ -120,8 +129,19 @@ Ao terminar, consolida:
 - hashes de `best.pt` e `last.pt`;
 - relação com o modelo-pai;
 - modelo resultante e seus aliases.
+- avaliações independentes do `best.pt` em `test_normal` e `test_stress`;
+- queda absoluta e relativa das métricas sob estresse.
 
-O callback de finalização também registra falha, cancelamento ou interrupção.
+O teste de estresse ocorre somente depois do treino e nunca seleciona época ou
+checkpoint. Falha em uma avaliação é registrada sem apagar um treinamento que
+terminou corretamente.
+
+Origens e versões nativas existentes podem ser sincronizadas de forma
+idempotente:
+
+```powershell
+python -m dataset_studio.utils.sync_lineage_catalog --workspace .
+```
 
 ## Migração do fish_detection
 
@@ -157,11 +177,13 @@ Pela API:
 ```text
 GET /api/registry/status
 GET /api/registry/models
+GET /api/registry/sources
 ```
 
 O validador confere:
 
 - pais, datasets e modelos referenciados;
+- origens e hashes de seus `source.yaml`;
 - hashes de modelos e aliases;
 - hashes dos artefatos dos runs;
 - hash do manifest do dataset quando disponível;

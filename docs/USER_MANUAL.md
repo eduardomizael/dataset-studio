@@ -98,6 +98,10 @@ Ao escolher uma revisão, você entra na montagem da versão (`/version.html`). 
 ### 1. Divisão por Vídeo Completo (Sem Vazamento / Data Leakage)
 - O sistema exige que cada vídeo seja atribuído exatamente uma vez a `train`, `val`, `test_normal` ou `test_stress`.
 - A divisão ocorre por vídeo completo, evitando que frames correlacionados vazem entre splits.
+- `test_normal` mede generalização em condições representativas de operação.
+- `test_stress` reúne condições deliberadamente difíceis, como iluminação,
+  densidade, reflexos ou movimento atípicos. Ele mede robustez e não deve ser
+  usado para escolher parâmetros, épocas ou pesos.
 
 ### 2. Materialização
 - Ao clicar em **`🔨 Materializar Dataset`**, o sistema constrói tudo em staging e só publica após sucesso integral. São gerados `data.yaml`, `data_test_stress.yaml` quando aplicável, `manifest.csv`, `build_report.json`, imagens e labels YOLO.
@@ -121,12 +125,24 @@ Na tela da versão materializada:
    - Ao finalizar, o sistema exibe os melhores pesos gerados (`best.pt`) e métricas finais.
    - O registry consolida automaticamente o dataset, modelo inicial, modelo-pai,
      hashes, melhor época e checkpoint resultante.
+   - O `best.pt` é avaliado automaticamente nos testes normal e de estresse.
+     O relatório compara precisão, recall, mAP50 e mAP50-95 e mostra a queda
+     sob estresse. Splits ausentes são informados como não disponíveis.
    - Pesos promovidos podem continuar com nomes amigáveis, mas sua identidade é
      o `model_id` associado ao SHA-256.
    - Ao promover pela interface, a ferramenta também cria automaticamente
      `deployments/<model_id>/deployment_manifest.yaml` e uma cópia imutável do
-     peso. Esse diretório pode ser copiado para a aplicação ou equipamento de
-     inferência sem depender do servidor do Dataset Studio.
+    peso. Esse diretório pode ser copiado para a aplicação ou equipamento de
+    inferência sem depender do servidor do Dataset Studio.
+
+### Perfis em `config/`
+
+Os YAML em `config/` são templates para criar novas origens. No momento da
+criação, o Dataset Studio copia somente os parâmetros usados pelo servidor de
+predição (limiar, device, resolução, IoU, limite de detecções, meia precisão e
+ROI) para `source.yaml` e grava seu hash. A origem passa a usar essa cópia
+congelada. Portanto, editar um template depois não muda campanhas já criadas e
+o usuário não precisa repetir essa configuração a cada dataset.
 
 ---
 
