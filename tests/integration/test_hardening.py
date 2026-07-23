@@ -6,11 +6,20 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from dataset_studio.adapters.opencv.media import extract_source_frames
 from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTrainer
-from dataset_studio.domain import Workspace, create_source, dump_yaml, load_frame_manifest
+from dataset_studio.domain import (
+    Workspace,
+    WorkflowError,
+    create_source,
+    dump_yaml,
+    load_frame_manifest,
+    load_source,
+    prediction_profile_sha256,
+)
 from dataset_studio.ports.trainer import TrainingParams
 from dataset_studio.web.app import create_web_app
 
@@ -108,6 +117,7 @@ def test_deletion_requires_exact_confirmation_and_reports_dependencies(tmp_path:
     )
     assert deleted.status_code == 200
     assert not ws.source_root("source_one").exists()
+    assert not (ws.registry_root / "sources" / "source_one.yaml").exists()
     assert not ws.version_root("version_one").exists()
     assert not run_root.exists()
 
@@ -118,6 +128,63 @@ def test_training_command_uses_current_environment(tmp_path: Path):
     )
     assert command[0] == sys.executable
     assert "fish_detection" not in " ".join(command)
+
+
+def test_source_freezes_prediction_profile_and_detects_tampering(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    videos = ws.videos_root
+    videos.mkdir()
+    (videos / "sample.mp4").write_bytes(b"video")
+    ws.models_root.mkdir()
+    (ws.models_root / "model.pt").write_bytes(b"model")
+    profile_path = ws.config_root / "prediction.yaml"
+    dump_yaml(
+        profile_path,
+        {
+            "detection": {
+                "conf_threshold": 0.17,
+                "device": "cpu",
+                "img_size": 960,
+                "iou_threshold": 0.5,
+                "max_det": 100,
+                "half_precision": False,
+            },
+            "roi": {"enabled": True, "points": [[1, 2], [3, 4]]},
+            "tracking": {"ignored": True},
+        },
+    )
+    create_source(
+        ws,
+        source_id="profile_source",
+        videos_dir=videos,
+        video_pattern="*.mp4",
+        annotation={
+            "classes": ["objeto"],
+            "backend": "local",
+            "model": "models/model.pt",
+            "detection_config": "config/prediction.yaml",
+        },
+    )
+
+    source = load_source(ws, "profile_source")
+    profile = source["annotation"]["prediction_profile"]
+    assert profile["detection"]["conf_threshold"] == 0.17
+    assert "tracking" not in profile
+    assert source["annotation"]["prediction_profile_sha256"] == (
+        prediction_profile_sha256(profile)
+    )
+
+    profile_path.write_text("detection: {conf_threshold: 0.99}\n", encoding="utf-8")
+    assert load_source(ws, "profile_source")["annotation"][
+        "prediction_profile"
+    ]["detection"]["conf_threshold"] == 0.17
+
+    source["annotation"]["prediction_profile"]["detection"][
+        "conf_threshold"
+    ] = 0.99
+    dump_yaml(ws.source_config_path("profile_source"), source)
+    with pytest.raises(WorkflowError, match="perfil de predição"):
+        load_source(ws, "profile_source")
 
 
 def test_training_endpoint_persists_unique_identity(tmp_path: Path, monkeypatch):

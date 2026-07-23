@@ -17,8 +17,8 @@ class UltralyticsCommandTrainer(Trainer):
         cmd = [
             sys.executable,
             "-u",
-            "-c",
-            "import sys, ultralytics.cfg; sys.argv=['yolo', *sys.argv[1:]]; ultralytics.cfg.entrypoint()",
+            "-m",
+            "dataset_studio.adapters.ultralytics.training_runner",
         ]
 
         device_val = params.device
@@ -30,8 +30,6 @@ class UltralyticsCommandTrainer(Trainer):
                 device_val = "cpu"
 
         cmd.extend([
-            "detect",
-            "train",
             f"data={data_yaml_path.resolve()}",
             f"model={params.model}",
             f"epochs={params.epochs}",

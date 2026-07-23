@@ -13,6 +13,7 @@ from typing import Any
 from dataset_studio.domain import (
     Workspace,
     WorkflowError,
+    dump_yaml,
     find_model_by_hash,
     find_model_by_path,
     list_registered_models,
@@ -160,6 +161,7 @@ def snapshot_version_dataset(ws: Workspace, version_id: str) -> dict[str, Any]:
         "dataset_id": version_id,
         "kind": "materialized_version",
         "version_id": version_id,
+        "sources": list(config.get("sources") or config.get("campaigns") or []),
         "annotation_revisions": config.get("annotation_revisions", {}),
         "provisional": bool(config.get("provisional", False)),
         "images": report.get("images"),
@@ -179,6 +181,13 @@ def snapshot_version_dataset(ws: Workspace, version_id: str) -> dict[str, Any]:
             "manifest": _stored_path(ws, manifest_path),
             "data": _stored_path(ws, data_path),
             "build_report": _stored_path(ws, build_report_path),
+        },
+        "canonical_manifest": {
+            "path": _stored_path(ws, config_path),
+            "sha256": (
+                report.get("version_config_sha256")
+                or (sha256(config_path) if config_path.is_file() else None)
+            ),
         },
         "provenance": {
             "origin": "generated",
@@ -327,12 +336,14 @@ def finalize_training_record(
     last = run_root / "weights" / "last.pt"
     args = run_root / "args.yaml"
     results = run_root / "results.csv"
+    evaluation_summary = run_root / "evaluations" / "summary.json"
     artifacts: dict[str, Any] = dict(record.get("artifacts") or {})
     for key, path in (
         ("args", args),
         ("results", results),
         ("best", best),
         ("last", last),
+        ("evaluation_summary", evaluation_summary),
     ):
         if path.is_file():
             artifacts[key] = {
@@ -378,6 +389,24 @@ def finalize_training_record(
         )
         register_model(ws, output_record, aliases=[best], replace=bool(existing))
 
+    evaluations: dict[str, Any] = dict(record.get("evaluations") or {})
+    robustness: dict[str, Any] = dict(record.get("robustness") or {})
+    if evaluation_summary.is_file():
+        try:
+            evaluation_payload = json.loads(
+                evaluation_summary.read_text(encoding="utf-8")
+            )
+            evaluations = dict(evaluation_payload.get("evaluations") or {})
+            robustness = dict(evaluation_payload.get("robustness") or {})
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            evaluations = {
+                **evaluations,
+                "_summary": {
+                    "status": "failed",
+                    "error": f"Relatório de avaliação inválido: {exc}",
+                },
+            }
+
     record.update(
         {
             "status": status,
@@ -392,10 +421,14 @@ def finalize_training_record(
             else None,
             "output_model_id": output_model_id,
             "metrics": _read_metrics(results) or record.get("metrics", {}),
+            "evaluations": evaluations,
+            "robustness": robustness,
             "artifacts": artifacts,
         }
     )
     register_run(ws, record, replace=True)
+    run_root.mkdir(parents=True, exist_ok=True)
+    dump_yaml(run_root / "run.yaml", record)
     return record
 
 
@@ -415,6 +448,7 @@ def promote_registered_model(
     register_model(ws, promoted, aliases=[promoted_path], replace=True)
     record["state"] = "promoted"
     register_run(ws, record, replace=True)
+    dump_yaml(ws.runs_root / training_id / "run.yaml", record)
     return promoted
 
 

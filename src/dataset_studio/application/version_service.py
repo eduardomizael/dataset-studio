@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTrainer
@@ -66,7 +67,12 @@ def training_recipe(ws: Workspace, version_id: str, params: TrainingParams | Non
     if not data_yaml.exists():
         raise WorkflowError("Materialize a versao antes de configurar o treinamento.")
 
-    p = params or TrainingParams(project=str(ws.root / "runs" / "detect"), name=version_id)
+    p = params or TrainingParams()
+    p = replace(
+        p,
+        project=p.project or str(ws.runs_root),
+        name=p.name or version_id,
+    )
     trainer = UltralyticsCommandTrainer()
     command = trainer.build_command(data_yaml, p)
 

@@ -1,4 +1,4 @@
-"""Registro estruturado de datasets, treinamentos e modelos."""
+"""Catálogo derivado de origens, datasets, treinamentos e modelos."""
 
 from __future__ import annotations
 
@@ -41,6 +41,11 @@ def dataset_registry_path(ws: Workspace, dataset_id: str) -> Path:
     return ws.registry_root / "datasets" / f"{dataset_id}.yaml"
 
 
+def source_registry_path(ws: Workspace, source_id: str) -> Path:
+    validate_id(source_id, "source_id")
+    return ws.registry_root / "sources" / f"{source_id}.yaml"
+
+
 def run_registry_path(ws: Workspace, run_id: str) -> Path:
     validate_id(run_id, "run_id")
     return ws.registry_root / "runs" / f"{run_id}.yaml"
@@ -70,6 +75,66 @@ def resolve_registered_path(ws: Workspace, value: str) -> Path:
 
 def list_registered_models(ws: Workspace) -> dict[str, dict[str, Any]]:
     return _load_or_default(models_registry_path(ws), "models")["models"]
+
+
+def list_registered_sources(ws: Workspace) -> dict[str, dict[str, Any]]:
+    root = ws.registry_root / "sources"
+    if not root.exists():
+        return {}
+    return {
+        path.stem: load_yaml(path)
+        for path in sorted(root.glob("*.yaml"))
+    }
+
+
+def register_source_manifest(
+    ws: Workspace,
+    source_id: str,
+    manifest_path: Path | None = None,
+) -> Path:
+    """Atualiza o índice derivado a partir do source.yaml canônico."""
+    validate_id(source_id, "source_id")
+    manifest = manifest_path or ws.source_config_path(source_id)
+    if not manifest.is_file():
+        raise WorkflowError(f"Manifesto canônico da origem ausente: {manifest}")
+    source = load_yaml(manifest)
+    if (source.get("source_id") or source.get("campaign_id")) != source_id:
+        raise WorkflowError(f"Identificador divergente em {manifest}.")
+    record = {
+        "schema_version": 1,
+        "source_id": source_id,
+        "created_at": source.get("created_at"),
+        "fixed": (
+            manifest.parent / "label_studio" / "import_tasks.json"
+        ).is_file(),
+        "canonical_manifest": {
+            "path": _stored_path(ws, manifest),
+            "sha256": sha256(manifest),
+        },
+        "videos": [
+            {
+                "name": item.get("name"),
+                "sha256": item.get("sha256"),
+            }
+            for item in (source.get("videos", {}).get("files") or [])
+        ],
+        "extraction_model_sha256": (source.get("extraction") or {}).get(
+            "model_sha256"
+        ),
+        "annotation_model_sha256": (source.get("annotation") or {}).get(
+            "model_sha256"
+        ),
+        "prediction_profile_sha256": (source.get("annotation") or {}).get(
+            "prediction_profile_sha256"
+        ),
+        "provenance": {
+            "origin": "derived_index",
+            "confidence": "confirmed",
+        },
+    }
+    path = source_registry_path(ws, source_id)
+    dump_yaml(path, record)
+    return path
 
 
 def list_registered_aliases(ws: Workspace) -> dict[str, str]:
@@ -120,6 +185,18 @@ def register_run(
         return path
     dump_yaml(path, record)
     return path
+
+
+def unregister_source(ws: Workspace, source_id: str) -> None:
+    source_registry_path(ws, source_id).unlink(missing_ok=True)
+
+
+def unregister_dataset(ws: Workspace, dataset_id: str) -> None:
+    dataset_registry_path(ws, dataset_id).unlink(missing_ok=True)
+
+
+def unregister_run(ws: Workspace, run_id: str) -> None:
+    run_registry_path(ws, run_id).unlink(missing_ok=True)
 
 
 def register_model(
@@ -220,9 +297,29 @@ def validate_registry(ws: Workspace) -> dict[str, Any]:
 
     run_paths = sorted((ws.registry_root / "runs").glob("*.yaml"))
     dataset_paths = sorted((ws.registry_root / "datasets").glob("*.yaml"))
+    source_paths = sorted((ws.registry_root / "sources").glob("*.yaml"))
+    source_ids = {path.stem for path in source_paths}
+    for path in source_paths:
+        source = load_yaml(path)
+        source_id = source.get("source_id", path.stem)
+        canonical = source.get("canonical_manifest") or {}
+        manifest_path = resolve_registered_path(
+            ws, str(canonical.get("path") or "")
+        )
+        if not manifest_path.is_file():
+            errors.append(f"{source_id}: source.yaml canônico ausente")
+        elif canonical.get("sha256") and sha256(manifest_path) != canonical["sha256"]:
+            errors.append(f"{source_id}: source.yaml alterado sem sincronizar catálogo")
+
     dataset_ids = {path.stem for path in dataset_paths}
     for path in dataset_paths:
         dataset = load_yaml(path)
+        for source_id in dataset.get("sources") or []:
+            if source_id not in source_ids:
+                warnings.append(
+                    f"{dataset.get('dataset_id', path.stem)}: "
+                    f"origem não registrada: {source_id}"
+                )
         archive_value = (dataset.get("paths") or {}).get("archive_manifest")
         archive_hash = (dataset.get("physical_archive") or {}).get(
             "manifest_sha256"
@@ -307,6 +404,7 @@ def validate_registry(ws: Workspace) -> dict[str, Any]:
         "valid": not errors,
         "models": len(models),
         "aliases": len(aliases),
+        "sources": len(source_ids),
         "datasets": len(dataset_ids),
         "runs": len(run_paths),
         "errors": errors,

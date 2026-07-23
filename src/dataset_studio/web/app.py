@@ -67,11 +67,14 @@ from dataset_studio.domain import (
     list_sources,
     list_registered_aliases,
     list_registered_models,
+    list_registered_sources,
     list_versions,
     load_source,
     load_yaml,
+    register_source_manifest,
     run_registry_path,
     sha256,
+    unregister_run,
     validate_id,
 )
 
@@ -313,6 +316,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         if not run_dir.is_dir():
             raise WorkflowError(f"Treinamento nao encontrado: {training_id}")
         shutil.rmtree(run_dir, ignore_errors=False)
+        unregister_run(workspace, training_id)
 
     def remove_version_with_dependents(version_id: str, cascade: bool) -> None:
         if cascade:
@@ -2335,12 +2339,12 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-lg">
                 <div class="text-slate-400 font-medium">mAP50 (Acurácia 50%)</div>
                 <div id="stat-map50" class="text-2xl font-extrabold text-emerald-400 font-mono">--</div>
-                <div class="text-[11px] text-slate-500">Métrica principal do YOLO</div>
+                <div class="text-[11px] text-slate-500">Validação durante o treinamento</div>
             </div>
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-lg">
                 <div class="text-slate-400 font-medium">mAP50-95</div>
                 <div id="stat-map5095" class="text-2xl font-extrabold text-indigo-400 font-mono">--</div>
-                <div class="text-[11px] text-slate-500">Acurácia rigorosa multi-IoU</div>
+                <div class="text-[11px] text-slate-500">Validação durante o treinamento</div>
             </div>
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-lg">
                 <div class="text-slate-400 font-medium">Precisão / Precisão (P)</div>
@@ -2353,6 +2357,30 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 <div class="text-[11px] text-slate-500">Taxa de detecção completa</div>
             </div>
         </div>
+
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div>
+                <h2 class="text-lg font-bold text-slate-200">🧪 Avaliação final e robustez</h2>
+                <p class="text-xs text-slate-400 mt-1">
+                    O mesmo <code class="text-emerald-300">best.pt</code> é avaliado após o treino.
+                    O teste de estresse nunca participa da seleção do modelo.
+                </p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="text-slate-400 border-b border-slate-800">
+                        <tr>
+                            <th class="text-left py-2">Métrica</th>
+                            <th class="text-right py-2">Teste normal</th>
+                            <th class="text-right py-2">Teste de estresse</th>
+                            <th class="text-right py-2">Queda</th>
+                        </tr>
+                    </thead>
+                    <tbody id="evaluation-metrics-body" class="font-mono text-slate-200"></tbody>
+                </table>
+            </div>
+            <div id="evaluation-status" class="text-xs text-slate-500">Carregando avaliações...</div>
+        </section>
 
         <!-- Grade de Detalhes do Modelo & Arquivos -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2474,6 +2502,43 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         const urlParams = new URLSearchParams(window.location.search);
         const trainingId = urlParams.get('id');
 
+        function formatPercent(value) {
+            return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : '--';
+        }
+
+        function renderEvaluations(evaluations, robustness) {
+            const normal = evaluations.test_normal || {};
+            const stress = evaluations.test_stress || {};
+            const labels = {
+                precision: 'Precisão',
+                recall: 'Recall',
+                map50: 'mAP50',
+                map50_95: 'mAP50-95'
+            };
+            const rows = Object.entries(labels).map(([key, label]) => {
+                const drop = (robustness[key] || {}).drop_absolute;
+                return `<tr class="border-b border-slate-800/60">
+                    <td class="py-2 font-sans">${label}</td>
+                    <td class="py-2 text-right">${formatPercent(normal[key])}</td>
+                    <td class="py-2 text-right">${formatPercent(stress[key])}</td>
+                    <td class="py-2 text-right ${typeof drop === 'number' && drop > 0 ? 'text-rose-400' : 'text-slate-400'}">${formatPercent(drop)}</td>
+                </tr>`;
+            });
+            document.getElementById('evaluation-metrics-body').innerHTML = rows.join('');
+
+            const describe = (label, value) => {
+                if (value.status === 'completed') {
+                    return `${label}: ${value.images || 0} imagens, ${value.boxes || 0} caixas`;
+                }
+                if (value.status === 'failed') {
+                    return `${label}: falhou (${value.error || 'erro não informado'})`;
+                }
+                return `${label}: não disponível nesta versão`;
+            };
+            document.getElementById('evaluation-status').innerText =
+                `${describe('Teste normal', normal)} · ${describe('Teste de estresse', stress)}`;
+        }
+
         async function initTrainingPage() {
             if (!trainingId) {
                 alert('ID de treinamento não informado!');
@@ -2504,6 +2569,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 document.getElementById('stat-map5095').innerText = m.map50_95 !== null ? `${(m.map50_95 * 100).toFixed(1)}%` : '--';
                 document.getElementById('stat-precision').innerText = m.precision !== null ? `${(m.precision * 100).toFixed(1)}%` : '--';
                 document.getElementById('stat-recall').innerText = m.recall !== null ? `${(m.recall * 100).toFixed(1)}%` : '--';
+                renderEvaluations(data.evaluations || {}, data.robustness || {});
 
                 // Preenchimento dos Dados do Modelo e Release
                 const args = data.args || {};
@@ -2843,6 +2909,8 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             "args": training_args,
             "release": release_info,
             "metrics": metrics,
+            "evaluations": registry_run.get("evaluations", {}),
+            "robustness": registry_run.get("robustness", {}),
             "duration_seconds": duration_seconds,
             "log": log_content[-20000:],
             "images": image_files,
@@ -2961,6 +3029,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             "aliases": list_registered_aliases(workspace),
         }
 
+    @app.get("/api/registry/sources")
+    def api_registry_sources():
+        return list_registered_sources(workspace)
+
     @app.get("/api/sources")
     @app.get("/api/campaigns")
     def api_list_sources():
@@ -3078,6 +3150,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     extraction["model"] = None
                 source["extraction"] = extraction
                 dump_yaml(workspace.source_config_path(source_id), source)
+                register_source_manifest(workspace, source_id)
             manifest_path = extract_source_frames(workspace, source_id)
             return {"status": "ok", "manifest": str(manifest_path)}
         except WorkflowError as exc:
@@ -3108,11 +3181,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 source["annotation"]["backend"] = "local"
                 source["annotation"]["model"] = request.model
                 dump_yaml(workspace.source_config_path(source_id), source)
+                register_source_manifest(workspace, source_id)
             output = build_import_tasks(
                 workspace,
                 source_id,
                 include_predictions=request.mode != "none",
             )
+            register_source_manifest(workspace, source_id)
             return {"status": "ok", "output": str(output)}
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))

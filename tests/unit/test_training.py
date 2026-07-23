@@ -1,9 +1,16 @@
 from pathlib import Path
 
+import pytest
+
 
 from dataset_studio.application import (
     TrainingParams,
     training_recipe,
+)
+from dataset_studio.adapters.ultralytics.training_runner import (
+    calculate_robustness,
+    normalize_validation_metrics,
+    split_inventory,
 )
 from dataset_studio.cli.main import main
 from dataset_studio.domain import (
@@ -100,6 +107,11 @@ def test_training_params_customization(tmp_path: Path):
     assert "epochs=100" in recipe["command_str"]
     assert "imgsz=1280" in recipe["command_str"]
     assert "optimizer=AdamW" in recipe["command_str"]
+    assert "dataset_studio.adapters.ultralytics.training_runner" in recipe[
+        "command_str"
+    ]
+    assert "project=" in recipe["command_str"]
+    assert "name=rel1" in recipe["command_str"]
 
 
 def test_cli_release_train_dry_run(tmp_path: Path, capsys):
@@ -128,3 +140,51 @@ def test_cli_release_train_dry_run(tmp_path: Path, capsys):
     assert "epochs\": 25" in captured.out
     assert "device\": \"cpu\"" in captured.out
     assert "[DRY-RUN] NENHUM PROCESSO DE TREINO FOI INICIADO." in captured.out
+
+
+def test_training_runner_normalizes_metrics_and_robustness():
+    class Box:
+        mp = 0.80
+        mr = 0.70
+        map50 = 0.90
+        map = 0.60
+
+    class Result:
+        box = Box()
+        speed = {"inference": 4.2}
+
+    normal = {
+        "status": "completed",
+        **normalize_validation_metrics(Result()),
+    }
+    stress = {
+        "status": "completed",
+        "precision": 0.70,
+        "recall": 0.60,
+        "map50": 0.75,
+        "map50_95": 0.45,
+    }
+    robustness = calculate_robustness(
+        {"test_normal": normal, "test_stress": stress}
+    )
+
+    assert normal["map50_95"] == 0.60
+    assert normal["speed_ms"]["inference"] == 4.2
+    assert robustness["status"] == "completed"
+    assert robustness["map50_95"]["drop_absolute"] == pytest.approx(0.15)
+    assert robustness["map50_95"]["drop_relative"] == pytest.approx(0.25)
+
+
+def test_training_runner_counts_inventory_from_immutable_manifest(tmp_path: Path):
+    (tmp_path / "manifest.csv").write_text(
+        "frame_id,split,included,boxes\n"
+        "f1,test_normal,true,3\n"
+        "f2,test_normal,false,8\n"
+        "f3,test_stress,true,2\n",
+        encoding="utf-8",
+    )
+
+    assert split_inventory(tmp_path, "test_normal") == {
+        "images": 1,
+        "boxes": 3,
+    }

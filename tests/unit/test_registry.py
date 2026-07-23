@@ -101,6 +101,37 @@ def test_training_registry_captures_dataset_parent_and_output_hashes(tmp_path: P
         encoding="utf-8",
     )
     dump_yaml(run_root / "args.yaml", params.to_dict())
+    evaluation_root = run_root / "evaluations"
+    evaluation_root.mkdir()
+    (evaluation_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "evaluations": {
+                    "test_normal": {
+                        "status": "completed",
+                        "images": 10,
+                        "boxes": 20,
+                        "map50_95": 0.70,
+                    },
+                    "test_stress": {
+                        "status": "completed",
+                        "images": 5,
+                        "boxes": 10,
+                        "map50_95": 0.55,
+                    },
+                },
+                "robustness": {
+                    "status": "completed",
+                    "map50_95": {
+                        "drop_absolute": 0.15,
+                        "drop_relative": 0.214285714,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     completed = finalize_training_record(ws, "training_one", "completed")
 
@@ -109,6 +140,12 @@ def test_training_registry_captures_dataset_parent_and_output_hashes(tmp_path: P
     assert completed["artifacts"]["best"]["sha256"] == sha256(
         weights / "best.pt"
     )
+    assert completed["evaluations"]["test_stress"]["map50_95"] == 0.55
+    assert completed["robustness"]["map50_95"]["drop_absolute"] == 0.15
+    assert completed["artifacts"]["evaluation_summary"]["sha256"] == sha256(
+        evaluation_root / "summary.json"
+    )
+    assert load_yaml(run_root / "run.yaml")["run_id"] == "training_one"
     output = list_registered_models(ws)[completed["output_model_id"]]
     assert output["parent_model_id"] == started["initial_model_id"]
     assert output["dataset_id"] == "version_registry"
@@ -117,9 +154,11 @@ def test_training_registry_captures_dataset_parent_and_output_hashes(tmp_path: P
 
     client = TestClient(create_web_app(ws))
     api_status = client.get("/api/registry/status")
+    api_sources = client.get("/api/registry/sources")
     api_training = client.get("/api/trainings/training_one")
     assert api_status.status_code == 200
     assert api_status.json()["valid"] is True
+    assert api_sources.status_code == 200
     assert api_training.status_code == 200
     assert api_training.json()["registry"]["dataset_id"] == "version_registry"
     assert api_training.json()["registered_model"]["parent_model_id"] == started[

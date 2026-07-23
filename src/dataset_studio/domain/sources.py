@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from html import escape
@@ -9,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from dataset_studio.domain.errors import WorkflowError
+from dataset_studio.domain.registry import (
+    register_source_manifest,
+    unregister_source,
+)
 from dataset_studio.domain.workspace import (
     Workspace,
     dump_yaml,
@@ -56,6 +61,41 @@ def list_sources(defaults_or_ws: dict[str, Any] | Workspace) -> list[str]:
         path.name for path in root.iterdir()
         if (path / "source.yaml").is_file() or (path / "campaign.yaml").is_file()
     )
+
+
+def prediction_profile_from_config(payload: dict[str, Any]) -> dict[str, Any]:
+    """Extrai somente parâmetros realmente consumidos pelo backend de predição."""
+    detection = dict(payload.get("detection") or {})
+    roi = dict(payload.get("roi") or {})
+    return {
+        "schema_version": 1,
+        "detection": {
+            key: detection.get(key)
+            for key in (
+                "conf_threshold",
+                "device",
+                "img_size",
+                "iou_threshold",
+                "max_det",
+                "half_precision",
+            )
+            if detection.get(key) is not None
+        },
+        "roi": {
+            "enabled": bool(roi.get("enabled", False)),
+            "points": roi.get("points") if isinstance(roi.get("points"), list) else [],
+        },
+    }
+
+
+def prediction_profile_sha256(profile: dict[str, Any]) -> str:
+    serialized = json.dumps(
+        profile,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 
@@ -184,11 +224,18 @@ def create_source(
         annotation_config["detection_config_sha256"] = sha256(
             detection_config_path
         )
+        profile = prediction_profile_from_config(detection_payload)
+        annotation_config["prediction_profile"] = profile
+        annotation_config["prediction_profile_sha256"] = (
+            prediction_profile_sha256(profile)
+        )
     else:
         annotation_config["model"] = None
         annotation_config["model_sha256"] = None
         annotation_config["detection_config"] = None
         annotation_config["detection_config_sha256"] = None
+        annotation_config["prediction_profile"] = None
+        annotation_config["prediction_profile_sha256"] = None
 
     (root / "frames" / "raw" / "images").mkdir(parents=True)
     (root / "label_studio").mkdir(parents=True)
@@ -232,6 +279,7 @@ def create_source(
     (root / "label_studio" / "labeling_config.xml").write_text(
         labeling_config, encoding="utf-8"
     )
+    register_source_manifest(ws, target_id, config_path)
     return config_path
 
 
@@ -241,6 +289,15 @@ def load_source(defaults_or_ws: dict[str, Any] | Workspace, source_id: str) -> d
     payload = load_yaml(path)
     if payload.get("source_id") != source_id and payload.get("campaign_id") != source_id:
         raise WorkflowError("source.yaml possui identificador divergente.")
+    annotation = payload.get("annotation") or {}
+    profile = annotation.get("prediction_profile")
+    expected_hash = annotation.get("prediction_profile_sha256")
+    if profile is not None:
+        actual_hash = prediction_profile_sha256(profile)
+        if not expected_hash or actual_hash != expected_hash:
+            raise WorkflowError(
+                "O perfil de predição congelado da origem foi alterado."
+            )
     return payload
 
 
@@ -524,6 +581,12 @@ def delete_source(
         if candidate == expected:
             isolated_videos_dir = candidate
     shutil.rmtree(root, ignore_errors=False)
+    ws = (
+        defaults_or_ws
+        if isinstance(defaults_or_ws, Workspace)
+        else Workspace.from_path(workspace_root(defaults_or_ws))
+    )
+    unregister_source(ws, source_id)
     if isolated_videos_dir is not None and isolated_videos_dir.is_dir():
         shutil.rmtree(isolated_videos_dir, ignore_errors=False)
     elif delete_video_files:

@@ -177,8 +177,15 @@ def start_ml_backend_job(
 
     detection: dict[str, Any] = {}
     roi_points: list[list[int]] = []
-    detection_config = annotation.get("detection_config")
-    if detection_config:
+    frozen_profile = annotation.get("prediction_profile")
+    if frozen_profile:
+        detection = dict(frozen_profile.get("detection") or {})
+        roi = dict(frozen_profile.get("roi") or {})
+        if roi.get("enabled") and isinstance(roi.get("points"), list):
+            roi_points = roi["points"]
+    elif annotation.get("detection_config"):
+        # Compatibilidade temporária com origens criadas antes do perfil congelado.
+        detection_config = annotation["detection_config"]
         config_payload = load_yaml(ws.resolve_path(detection_config))
         detection = dict(config_payload.get("detection") or {})
         roi = dict(config_payload.get("roi") or {})

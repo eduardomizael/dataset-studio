@@ -21,6 +21,7 @@ from dataset_studio.domain.sources import (
     source_root,
 )
 from dataset_studio.domain.errors import WorkflowError
+from dataset_studio.domain.registry import unregister_dataset
 from dataset_studio.domain.workspace import (
     SPLITS,
     Workspace,
@@ -353,6 +354,8 @@ def delete_version(defaults_or_ws: dict[str, Any] | Workspace, version_id: str) 
     if not root.exists():
         raise WorkflowError(f"Versão não encontrada: {version_id}")
     shutil.rmtree(root, ignore_errors=False)
+    if isinstance(defaults_or_ws, Workspace):
+        unregister_dataset(defaults_or_ws, version_id)
 
 
 # Aliases de retrocompatibilidade para release -> version
