@@ -1,0 +1,269 @@
+{
+  "schema_version": 1,
+  "linked_at": "2026-07-23T16:41:20.835855+00:00",
+  "snapshot_id": "fish-detection-legacy-runs",
+  "snapshot_verification": {
+    "schema_version": 1,
+    "snapshot_id": "fish-detection-legacy-runs",
+    "verified_at": "2026-07-23T16:41:20.405444+00:00",
+    "valid": true,
+    "files": 637,
+    "logical_bytes": 758495967,
+    "source_checked": true,
+    "errors": []
+  },
+  "runs": {
+    "dataset_260719001__yolo26n_fixed_valtest_seed43_best__20260720_012436_571432": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/dataset_260719001__yolo26n_fixed_valtest_seed43_best__20260720_012436_571432"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.411615+00:00"
+    },
+    "stat_e100_seed_42": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_e100_seed_42"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.432595+00:00"
+    },
+    "stat_e100_seed_43": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_e100_seed_43"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.449052+00:00"
+    },
+    "stat_e100_seed_44": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_e100_seed_44"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.464688+00:00"
+    },
+    "stat_e100_seed_45": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_e100_seed_45"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.480919+00:00"
+    },
+    "stat_e100_seed_46": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_e100_seed_46"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.496480+00:00"
+    },
+    "stat_fixed_e150_b16_seed_42": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_e150_b16_seed_42"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.514611+00:00"
+    },
+    "stat_fixed_e150_b16_seed_43": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_e150_b16_seed_43"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.530630+00:00"
+    },
+    "stat_fixed_e150_b16_seed_44": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_e150_b16_seed_44"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.547866+00:00"
+    },
+    "stat_fixed_e150_b16_seed_45": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_e150_b16_seed_45"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.563130+00:00"
+    },
+    "stat_fixed_e150_b16_seed_46": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_e150_b16_seed_46"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.581317+00:00"
+    },
+    "stat_fixed_valtest_yolo26n_base_e150_b16_seed_42": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_42"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.601454+00:00"
+    },
+    "stat_fixed_valtest_yolo26n_base_e150_b16_seed_43": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_43"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.617667+00:00"
+    },
+    "stat_fixed_valtest_yolo26n_base_e150_b16_seed_44": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_44"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.633221+00:00"
+    },
+    "stat_fixed_valtest_yolo26n_base_e150_b16_seed_45": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_45"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.650180+00:00"
+    },
+    "stat_fixed_valtest_yolo26n_base_e150_b16_seed_46": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_valtest_yolo26n_base_e150_b16_seed_46"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.666141+00:00"
+    },
+    "stat_fixed_yolo26n_base_e150_b16_seed_42": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_fixed_yolo26n_base_e150_b16_seed_42"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.682283+00:00"
+    },
+    "stat_seed_42": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_seed_42"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.698348+00:00"
+    },
+    "stat_w0_seed_42": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_w0_seed_42"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.714645+00:00"
+    },
+    "stat_w0_seed_43": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_w0_seed_43"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.728638+00:00"
+    },
+    "stat_w0_seed_44": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_w0_seed_44"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.742808+00:00"
+    },
+    "stat_w0_seed_45": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_w0_seed_45"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.763112+00:00"
+    },
+    "stat_w0_seed_46": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/stat_w0_seed_46"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.781276+00:00"
+    },
+    "train6": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/train6"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.799507+00:00"
+    },
+    "yolo26n_baseline": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/yolo26n_baseline"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.817674+00:00"
+    },
+    "yolo26n_v2": {
+      "snapshot_id": "fish-detection-legacy-runs",
+      "subpaths": [
+        "detect/yolo26n_v2"
+      ],
+      "archive_manifest": "dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv",
+      "manifest_sha256": "ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2",
+      "attached_at": "2026-07-23T16:41:20.833316+00:00"
+    }
+  },
+  "unmatched_runs": [
+    "release_canaleta_pvc_260717_export_selected2",
+    "t_20260723T041718_508d56"
+  ],
+  "registry_validation": {
+    "schema_version": 1,
+    "validated_at": "2026-07-23T16:41:21.720713+00:00",
+    "valid": true,
+    "models": 32,
+    "aliases": 36,
+    "datasets": 7,
+    "runs": 28,
+    "errors": [],
+    "warnings": [
+      "model-y11m-generic-external: arquivo ausente: models/yolo11m.pt",
+      "model-y11m-generic-external: nenhum arquivo físico disponível"
+    ]
+  }
+}

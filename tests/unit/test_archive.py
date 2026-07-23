@@ -7,6 +7,7 @@ import pytest
 from dataset_studio.application import (
     archive_status,
     attach_archive_to_dataset,
+    attach_archive_to_run,
     import_archive_snapshot,
     materialize_archive_snapshot,
     verify_archive_snapshot,
@@ -16,6 +17,8 @@ from dataset_studio.domain import (
     WorkflowError,
     dump_yaml,
     load_yaml,
+    register_dataset,
+    register_run,
     validate_registry,
 )
 
@@ -115,3 +118,56 @@ def test_archive_can_replace_external_dataset_paths(tmp_path: Path):
     assert attached["paths"]["archive_manifest"].endswith("manifest.csv")
     assert load_yaml(dataset_path)["physical_archive"]["snapshot_id"] == "legacy-one"
     assert validate_registry(ws)["valid"] is True
+
+
+def test_archive_can_be_attached_to_run(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path / "workspace")
+    source = create_source(tmp_path)
+    import_archive_snapshot(ws, "legacy-one", source)
+    register_dataset(
+        ws,
+        {
+            "schema_version": 1,
+            "dataset_id": "dataset-one",
+            "provenance": {
+                "origin": "reconstructed",
+                "confidence": "confirmed",
+                "evidence": [],
+            },
+        },
+    )
+    register_run(
+        ws,
+        {
+            "schema_version": 1,
+            "run_id": "run-one",
+            "dataset_id": "dataset-one",
+            "provenance": {
+                "origin": "reconstructed",
+                "confidence": "confirmed",
+                "evidence": [],
+            },
+        },
+    )
+
+    attached = attach_archive_to_run(
+        ws,
+        "run-one",
+        "legacy-one",
+        subpaths=["images"],
+    )
+
+    assert attached["physical_archive"]["subpaths"] == ["images"]
+    assert load_yaml(
+        ws.registry_root / "runs" / "run-one.yaml"
+    )["physical_archive"]["snapshot_id"] == "legacy-one"
+    assert validate_registry(ws)["valid"] is True
+
+    first_record = load_yaml(ws.registry_root / "runs" / "run-one.yaml")
+    attach_archive_to_run(
+        ws,
+        "run-one",
+        "legacy-one",
+        subpaths=["images"],
+    )
+    assert load_yaml(ws.registry_root / "runs" / "run-one.yaml") == first_record

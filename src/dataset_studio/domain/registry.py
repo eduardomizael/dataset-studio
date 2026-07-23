@@ -254,6 +254,22 @@ def validate_registry(ws: Workspace) -> dict[str, Any]:
     for path in run_paths:
         run = load_yaml(path)
         run_id = run.get("run_id", path.stem)
+        archive_value = (run.get("physical_archive") or {}).get(
+            "archive_manifest"
+        )
+        archive_hash = (run.get("physical_archive") or {}).get(
+            "manifest_sha256"
+        )
+        if archive_value and archive_hash:
+            archive_path = resolve_registered_path(ws, str(archive_value))
+            if not archive_path.is_file():
+                errors.append(
+                    f"{run_id}: manifest do arquivo físico ausente"
+                )
+            elif sha256(archive_path) != archive_hash:
+                errors.append(
+                    f"{run_id}: manifest do arquivo físico alterado"
+                )
         dataset_id = run.get("dataset_id")
         if dataset_id and dataset_id not in dataset_ids:
             errors.append(f"{run_id}: dataset_id inexistente: {dataset_id}")

@@ -15,6 +15,8 @@ from dataset_studio.domain import (
     dump_yaml,
     load_yaml,
     register_dataset,
+    register_run,
+    run_registry_path,
     sha256,
     utc_now,
     validate_id,
@@ -355,6 +357,62 @@ def attach_archive_to_dataset(
         },
     }
     register_dataset(ws, updated, replace=True)
+    return updated
+
+
+def attach_archive_to_run(
+    ws: Workspace,
+    run_id: str,
+    snapshot_id: str,
+    *,
+    subpaths: list[str],
+) -> dict[str, Any]:
+    """Relaciona um treinamento a uma cópia física imutável arquivada."""
+    run_path = run_registry_path(ws, run_id)
+    run = load_yaml(run_path)
+    snapshot_root = _snapshot_root(ws, snapshot_id)
+    snapshot = load_yaml(snapshot_root / "snapshot.yaml")
+    rows = _read_manifest(snapshot_root / "manifest.csv")
+    all_paths = {row["path"] for row in rows}
+    normalized_subpaths = [Path(value).as_posix().strip("/") for value in subpaths]
+    for prefix in normalized_subpaths:
+        if prefix not in all_paths and not any(
+            path.startswith(f"{prefix}/") for path in all_paths
+        ):
+            raise WorkflowError(
+                f"O subcaminho {prefix!r} não existe no snapshot {snapshot_id}."
+            )
+
+    archive_manifest = (
+        snapshot_root / "manifest.csv"
+    ).relative_to(ws.root).as_posix()
+    evidence = list((run.get("provenance") or {}).get("evidence") or [])
+    current_archive = run.get("physical_archive") or {}
+    if (
+        current_archive.get("snapshot_id") == snapshot_id
+        and current_archive.get("subpaths") == normalized_subpaths
+        and current_archive.get("archive_manifest") == archive_manifest
+        and current_archive.get("manifest_sha256") == snapshot["manifest_sha256"]
+        and archive_manifest in evidence
+    ):
+        return run
+    if archive_manifest not in evidence:
+        evidence.append(archive_manifest)
+    updated = {
+        **run,
+        "physical_archive": {
+            "snapshot_id": snapshot_id,
+            "subpaths": normalized_subpaths,
+            "archive_manifest": archive_manifest,
+            "manifest_sha256": snapshot["manifest_sha256"],
+            "attached_at": utc_now(),
+        },
+        "provenance": {
+            **(run.get("provenance") or {}),
+            "evidence": evidence,
+        },
+    }
+    register_run(ws, updated, replace=True)
     return updated
 
 

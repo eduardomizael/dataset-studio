@@ -149,7 +149,7 @@ cópia autocontida do artefato. Bundles existentes não são sobrescritos.
 
 ## Arquivo físico legado
 
-Importar, validar e reconstruir uma árvore histórica:
+Importar, validar e reconstruir uma árvore histórica de dataset ou run:
 
 ~~~powershell
 uv run --all-extras dataset-studio archive import --id legado-d2 --source C:\dados\split

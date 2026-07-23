@@ -159,3 +159,11 @@ provenance:
   - C:\Users\eduar\Desktop\fish_detection\runs\detect\stat_fixed_e150_b16_seed_45\args.yaml
   - C:\Users\eduar\Desktop\fish_detection\runs\detect\stat_fixed_e150_b16_seed_45\results.csv
   - C:\Users\eduar\Desktop\dataset-studio\runs\detect\stat_fixed_e150_b16_seed_45\results.csv
+  - dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv
+physical_archive:
+  snapshot_id: fish-detection-legacy-runs
+  subpaths:
+  - detect/stat_fixed_e150_b16_seed_45
+  archive_manifest: dataset/archive/snapshots/fish-detection-legacy-runs/manifest.csv
+  manifest_sha256: ee5a89f5eb270ff4cbdd3cd3ae4942ca8c09885432a34ee0fb6abdc6237d98e2
+  attached_at: '2026-07-23T16:41:20.563130+00:00'

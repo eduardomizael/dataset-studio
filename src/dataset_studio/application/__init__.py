@@ -4,6 +4,7 @@ from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTraine
 from dataset_studio.application.archive_service import (
     archive_status,
     attach_archive_to_dataset,
+    attach_archive_to_run,
     import_archive_snapshot,
     materialize_archive_snapshot,
     verify_archive_snapshot,
@@ -43,6 +44,7 @@ __all__ = [
     "JobManager",
     "archive_status",
     "attach_archive_to_dataset",
+    "attach_archive_to_run",
     "import_archive_snapshot",
     "materialize_archive_snapshot",
     "verify_archive_snapshot",
