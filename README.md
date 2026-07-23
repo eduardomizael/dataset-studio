@@ -47,6 +47,7 @@ Toda a documentação do projeto está disponível na pasta [`docs/`](docs/):
 6. 🛠️ **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Portas, CUDA, codecs, staging e recursos órfãos.
 7. 🔌 **[Guia de Adaptadores](docs/ADAPTERS_GUIDE.md)**: Contratos de predição e treinamento.
 8. 🧬 **[Registry de Modelos](docs/MODEL_REGISTRY.md)**: Proveniência, aliases, manifests retroativos e validação por SHA-256.
+9. 🗄️ **[Arquivo de Datasets Legados](docs/LEGACY_ARCHIVE.md)**: Preservação física deduplicada, verificação e reconstrução de snapshots históricos.
 
 ---
 

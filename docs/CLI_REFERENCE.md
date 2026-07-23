@@ -147,6 +147,20 @@ uv run --all-extras dataset-studio registry deploy `
 O comando cria `deployments/<deployment_id>/deployment_manifest.yaml` e uma
 cópia autocontida do artefato. Bundles existentes não são sobrescritos.
 
+## Arquivo físico legado
+
+Importar, validar e reconstruir uma árvore histórica:
+
+~~~powershell
+uv run --all-extras dataset-studio archive import --id legado-d2 --source C:\dados\split
+uv run --all-extras dataset-studio archive verify --id legado-d2 --source C:\dados\split
+uv run --all-extras dataset-studio archive materialize --id legado-d2 --destination C:\temp\d2
+uv run --all-extras dataset-studio archive status
+~~~
+
+O arquivo usa SHA-256 para deduplicar conteúdos e nunca sobrescreve um snapshot
+existente.
+
 ## Limitações atuais da CLI
 
 A CLI ainda não expõe:

@@ -223,6 +223,22 @@ def validate_registry(ws: Workspace) -> dict[str, Any]:
     dataset_ids = {path.stem for path in dataset_paths}
     for path in dataset_paths:
         dataset = load_yaml(path)
+        archive_value = (dataset.get("paths") or {}).get("archive_manifest")
+        archive_hash = (dataset.get("physical_archive") or {}).get(
+            "manifest_sha256"
+        )
+        if archive_value and archive_hash:
+            archive_path = resolve_registered_path(ws, str(archive_value))
+            if not archive_path.is_file():
+                errors.append(
+                    f"{dataset.get('dataset_id', path.stem)}: "
+                    "manifest do arquivo físico ausente"
+                )
+            elif sha256(archive_path) != archive_hash:
+                errors.append(
+                    f"{dataset.get('dataset_id', path.stem)}: "
+                    "manifest do arquivo físico alterado"
+                )
         manifest_value = (dataset.get("paths") or {}).get("manifest")
         manifest_hash = dataset.get("manifest_sha256")
         if manifest_value and manifest_hash:

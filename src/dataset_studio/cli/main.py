@@ -11,12 +11,16 @@ from pathlib import Path
 
 from dataset_studio.application import (
     TrainingParams,
+    archive_status,
     begin_training_record,
     export_deployment_bundle,
     finalize_training_record,
+    import_archive_snapshot,
+    materialize_archive_snapshot,
     registry_status,
     resolve_model_reference,
     training_recipe,
+    verify_archive_snapshot,
     source_status,
     version_status,
 )
@@ -124,6 +128,28 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Alias físico específico a exportar",
     )
+
+    archive_parser = subparsers.add_parser(
+        "archive", help="Arquivar snapshots físicos legados"
+    )
+    archive_sub = archive_parser.add_subparsers(dest="subcommand")
+    archive_import = archive_sub.add_parser(
+        "import", help="Importar árvore com deduplicação por SHA-256"
+    )
+    archive_import.add_argument("--id", required=True, help="ID imutável do snapshot")
+    archive_import.add_argument("--source", type=Path, required=True)
+    archive_import.add_argument("--label", default=None)
+    archive_verify = archive_sub.add_parser(
+        "verify", help="Validar objetos e origem opcional"
+    )
+    archive_verify.add_argument("--id", required=True)
+    archive_verify.add_argument("--source", type=Path, default=None)
+    archive_materialize = archive_sub.add_parser(
+        "materialize", help="Reconstruir snapshot em diretório vazio"
+    )
+    archive_materialize.add_argument("--id", required=True)
+    archive_materialize.add_argument("--destination", type=Path, required=True)
+    archive_sub.add_parser("status", help="Resumir snapshots e deduplicação")
 
     return parser.parse_args(args)
 
@@ -241,6 +267,32 @@ def main(args: list[str] | None = None) -> int:
                 / "deployment_manifest.yaml"
             )
             print(f"[OK] Bundle imutável exportado em: {manifest_path}")
+    elif parsed.command == "archive":
+        if parsed.subcommand == "import":
+            result = import_archive_snapshot(
+                ws,
+                parsed.id,
+                parsed.source,
+                source_label=parsed.label,
+            )
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        elif parsed.subcommand == "verify":
+            result = verify_archive_snapshot(
+                ws,
+                parsed.id,
+                source_root=parsed.source,
+            )
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0 if result["valid"] else 1
+        elif parsed.subcommand == "materialize":
+            result = materialize_archive_snapshot(
+                ws,
+                parsed.id,
+                parsed.destination,
+            )
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        elif parsed.subcommand == "status":
+            print(json.dumps(archive_status(ws), indent=2, ensure_ascii=False))
     else:
         print("Dataset Studio CLI v0.1.0. Use --help para ver os comandos disponíveis.")
 

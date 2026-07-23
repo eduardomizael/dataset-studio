@@ -24,9 +24,9 @@ splits:
     images: 53
     boxes: 502
 paths:
-  release: C:\Users\eduar\Desktop\fish_detection\dataset\releases\dataset_260719001
-  manifest: C:\Users\eduar\Desktop\fish_detection\dataset\releases\dataset_260719001\manifest.csv
-  build_report: C:\Users\eduar\Desktop\fish_detection\dataset\releases\dataset_260719001\build_report.json
+  snapshot: dataset/archive/snapshots/fish-detection-legacy-dataset/snapshot.yaml
+  archive_manifest: dataset/archive/snapshots/fish-detection-legacy-dataset/manifest.csv
+  manifest: dataset/archive/objects/45/453fb54ce3da29cbd239562f0f1080f72a79f145e34e2680f67123dc10778d28
 manifest_sha256: 453fb54ce3da29cbd239562f0f1080f72a79f145e34e2680f67123dc10778d28
 provenance:
   origin: reconstructed
@@ -37,3 +37,15 @@ provenance:
   - C:\Users\eduar\Desktop\fish_detection\dataset\releases\dataset_260719001\release.yaml
   - C:\Users\eduar\Desktop\fish_detection\dataset\releases\dataset_260719001\manifest.csv
   - C:\Users\eduar\Desktop\fish_detection\dataset\releases\dataset_260719001\build_report.json
+  - dataset/archive/snapshots/fish-detection-legacy-dataset/manifest.csv
+legacy_paths:
+  snapshot: dataset/archive/snapshots/fish-detection-legacy-dataset/snapshot.yaml
+  archive_manifest: dataset/archive/snapshots/fish-detection-legacy-dataset/manifest.csv
+  manifest: dataset/archive/objects/45/453fb54ce3da29cbd239562f0f1080f72a79f145e34e2680f67123dc10778d28
+physical_archive:
+  snapshot_id: fish-detection-legacy-dataset
+  subpaths:
+  - campaigns/canaleta_pvc_260717
+  - releases/dataset_260719001
+  manifest_sha256: e241547df6706a8cd6954dca73f0f9ff46023f61f536f09a68d44bc795931763
+  attached_at: '2026-07-23T16:15:19.880953+00:00'

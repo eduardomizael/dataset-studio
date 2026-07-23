@@ -58,7 +58,9 @@ dataset-studio/
 │   └── <source_id>/
 ├── dataset/
 │   ├── sources/                 # Origens e revisões
-│   └── versions/                # Versões configuradas/materializadas
+│   ├── versions/                # Versões configuradas/materializadas
+│   └── archive/                 # Snapshots legados deduplicados por SHA-256
+├── deployments/                 # Bundles imutáveis para aplicações consumidoras
 ├── runs/                        # Saída de treinamentos do YOLO
 │   └── detect/
 │       └── <training_id>/       # workflow_job.json, logs, pesos e métricas
@@ -145,13 +147,23 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
 3. **`models/`**:
    - Modelos `.pt` pré-treinados colocados pelo usuário para uso na extração inteligente, pré-anotação ou ML Backend.
 
-4. **`runs/detect/<training_id>/`**:
+4. **`dataset/archive/`**:
+   - `objects/<prefixo>/<sha256>`: conteúdo físico único e deduplicado.
+   - `snapshots/<snapshot_id>/manifest.csv`: caminhos originais e hashes.
+   - `snapshots/<snapshot_id>/snapshot.yaml`: identidade, origem e estatísticas.
+   - O arquivo preserva material legado sem apresentá-lo como versão nativa.
+
+5. **`deployments/<deployment_id>/`**:
+   - `deployment_manifest.yaml`: modelo, dataset, run, hashes e estado.
+   - `model.pt` ou `model_bundle/`: artefato autocontido para inferência.
+
+6. **`runs/detect/<training_id>/`**:
    - `workflow_job.json`: Estado persistido, parâmetros e `version_id` de origem.
    - `train.log`, `results.csv`, `args.yaml`, gráficos e `weights/best.pt`.
    - `run.yaml`: Manifest consolidado do treinamento.
    - `provenance/`: Snapshot da versão consumida pelo treinamento.
 
-5. **`registry/`**:
+7. **`registry/`**:
    - `models.yaml`: Identidades lógicas, hashes, pais, origem e estado dos modelos.
    - `aliases.yaml`: Caminhos físicos associados a cada `model_id`.
    - `datasets/<dataset_id>.yaml`: Manifests nativos ou reconstruídos.

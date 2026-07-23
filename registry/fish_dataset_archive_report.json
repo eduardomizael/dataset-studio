@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "linked_at": "2026-07-23T16:15:19.887018+00:00",
+  "snapshot_id": "fish-detection-legacy-dataset",
+  "snapshot_verification": {
+    "schema_version": 1,
+    "snapshot_id": "fish-detection-legacy-dataset",
+    "verified_at": "2026-07-23T16:15:19.326794+00:00",
+    "valid": true,
+    "files": 53878,
+    "logical_bytes": 5482289846,
+    "source_checked": true,
+    "errors": []
+  },
+  "datasets": {
+    "ds-d02-605": {
+      "snapshot_id": "fish-detection-legacy-dataset",
+      "subpaths": [
+        "split"
+      ],
+      "manifest_sha256": "e241547df6706a8cd6954dca73f0f9ff46023f61f536f09a68d44bc795931763",
+      "attached_at": "2026-07-23T16:15:19.436833+00:00"
+    },
+    "ds-d03-variable": {
+      "snapshot_id": "fish-detection-legacy-dataset",
+      "subpaths": [
+        "03_prepared/yolo",
+        "splits"
+      ],
+      "manifest_sha256": "e241547df6706a8cd6954dca73f0f9ff46023f61f536f09a68d44bc795931763",
+      "attached_at": "2026-07-23T16:15:19.552773+00:00"
+    },
+    "ds-d03-fixed-test": {
+      "snapshot_id": "fish-detection-legacy-dataset",
+      "subpaths": [
+        "03_prepared/yolo",
+        "05_test_fixed"
+      ],
+      "manifest_sha256": "e241547df6706a8cd6954dca73f0f9ff46023f61f536f09a68d44bc795931763",
+      "attached_at": "2026-07-23T16:15:19.660830+00:00"
+    },
+    "ds-d03-fixed-valtest": {
+      "snapshot_id": "fish-detection-legacy-dataset",
+      "subpaths": [
+        "03_prepared/yolo",
+        "04_splits",
+        "05_val_fixed",
+        "06_test_fixed"
+      ],
+      "manifest_sha256": "e241547df6706a8cd6954dca73f0f9ff46023f61f536f09a68d44bc795931763",
+      "attached_at": "2026-07-23T16:15:19.771846+00:00"
+    },
+    "ds-d04-r260719001": {
+      "snapshot_id": "fish-detection-legacy-dataset",
+      "subpaths": [
+        "campaigns/canaleta_pvc_260717",
+        "releases/dataset_260719001"
+      ],
+      "manifest_sha256": "e241547df6706a8cd6954dca73f0f9ff46023f61f536f09a68d44bc795931763",
+      "attached_at": "2026-07-23T16:15:19.880953+00:00"
+    }
+  },
+  "registry_validation": {
+    "schema_version": 1,
+    "validated_at": "2026-07-23T16:15:20.711244+00:00",
+    "valid": true,
+    "models": 32,
+    "aliases": 36,
+    "datasets": 7,
+    "runs": 28,
+    "errors": [],
+    "warnings": [
+      "model-y11m-generic-external: arquivo ausente: models/yolo11m.pt",
+      "model-y11m-generic-external: nenhum arquivo físico disponível"
+    ]
+  }
+}

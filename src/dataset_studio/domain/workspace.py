@@ -120,6 +120,10 @@ class Workspace:
     def deployments_root(self) -> Path:
         return self.root / "deployments"
 
+    @property
+    def archive_root(self) -> Path:
+        return self.root / "dataset" / "archive"
+
     def source_root(self, source_id: str) -> Path:
         return self.sources_root / source_id
 
