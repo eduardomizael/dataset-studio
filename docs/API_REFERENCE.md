@@ -73,7 +73,11 @@ Esta consulta não aceita exportações e não cria revisões.
 
 ### POST /api/sources/{source_id}/extract
 
-Configura e executa a extração. Só pode ser chamada antes de existirem frames.
+Configura e inicia a extração assíncrona. Só pode ser chamada antes de existirem frames e aceita apenas uma execução ativa por origem. Retorna imediatamente o estado inicial do job.
+
+### `GET /api/sources/{source_id}/extract/status`
+
+Retorna o andamento da extração: estado, etapa, percentual, unidade atual, unidades processadas, frames salvos e eventual erro. O alias legado `/api/campaigns/{source_id}/extract/status` também é aceito.
 
 Modo uniforme:
 

@@ -35,6 +35,7 @@ from dataset_studio.adapters.label_studio.credentials import (
 )
 from dataset_studio.adapters.opencv.media import extract_source_frames, preannotate_source_frames
 from dataset_studio.application import (
+    ExtractionJobManager,
     JobManager,
     TrainingParams,
     begin_training_record,
@@ -234,6 +235,7 @@ class DeployModelReq(BaseModel):
 def create_web_app(workspace: Workspace) -> FastAPI:
     """Fábrica para criação e configuração do servidor FastAPI do Dataset Studio Web."""
     app = FastAPI(title="Dataset Studio Web Dashboard", version="0.1.0", lifespan=lifespan)
+    extraction_manager = ExtractionJobManager()
 
     def training_ids_for_version(version_id: str) -> list[str]:
         runs_root = workspace.root / "runs" / "detect"
@@ -929,6 +931,16 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                                 ▶ Executar Extração de Frames
                             </button>
                         </div>
+                        <div id="extraction-progress" class="hidden p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl space-y-3" role="status" aria-live="polite">
+                            <div class="flex items-center justify-between gap-3 text-xs">
+                                <span id="extraction-progress-message" class="text-indigo-200 font-semibold">Preparando extração...</span>
+                                <span id="extraction-progress-percent" class="font-mono text-indigo-300">0%</span>
+                            </div>
+                            <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                <div id="extraction-progress-bar" class="h-full bg-indigo-500 transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                            <div id="extraction-progress-details" class="text-[11px] text-slate-400">Aguardando início.</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1087,6 +1099,8 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         let selectedMode = 'uniform';
         let step2Locked = false;
         let step3Locked = false;
+        let extractionPollTimer = null;
+        let extractionStartedHere = false;
 
         function escapeHtml(text) {
             if (!text) return '';
@@ -1261,6 +1275,8 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 alert('A extração de frames já foi concluída e esta etapa não pode mais ser alterada.');
                 return;
             }
+            const button = document.getElementById('btn-extract');
+            if (button.disabled) return;
             try {
                 const model = document.getElementById('extract-model').value;
                 const payload = {
@@ -1271,6 +1287,15 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 if (selectedMode === 'smart' && !model) {
                     throw new Error('Selecione um modelo para a extração inteligente.');
                 }
+                extractionStartedHere = true;
+                renderExtractionProgress({
+                    status: 'queued',
+                    percent: 0,
+                    message: 'Solicitando início da extração...',
+                    processed_units: 0,
+                    total_units: 0,
+                    frames_saved: 0
+                });
                 const res = await fetch(`/api/campaigns/${campaignId}/extract`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1278,10 +1303,103 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro na extração');
-                alert('Extração concluída com sucesso!');
-                loadCampaignDetails();
+                renderExtractionProgress(data);
+                startExtractionPolling();
             } catch (err) {
+                extractionStartedHere = false;
+                renderExtractionProgress({
+                    status: 'failed',
+                    percent: 0,
+                    message: 'Não foi possível iniciar a extração.',
+                    error: err.message
+                });
                 alert(err.message);
+            }
+        }
+
+        function setExtractionControlsBusy(busy) {
+            const button = document.getElementById('btn-extract');
+            button.disabled = busy || step2Locked;
+            document.getElementById('extract-step').disabled = busy || step2Locked;
+            document.getElementById('extract-model').disabled = busy || step2Locked;
+            if (busy) {
+                button.className = "px-5 py-2.5 bg-indigo-600/60 text-white font-medium text-xs rounded-lg cursor-wait border border-indigo-400/30";
+                button.innerText = "⏳ Extração em andamento...";
+            } else if (!step2Locked) {
+                button.className = "px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg shadow-lg shadow-indigo-600/30 transition";
+                button.innerText = "▶ Executar Extração de Frames";
+            }
+        }
+
+        function renderExtractionProgress(job) {
+            const panel = document.getElementById('extraction-progress');
+            const running = job.status === 'queued' || job.status === 'running';
+            const failed = job.status === 'failed';
+            if (job.status === 'idle') {
+                panel.classList.add('hidden');
+                setExtractionControlsBusy(false);
+                return;
+            }
+            panel.classList.remove('hidden');
+            const percent = Math.max(0, Math.min(100, Number(job.percent || 0)));
+            document.getElementById('extraction-progress-percent').innerText = `${percent}%`;
+            document.getElementById('extraction-progress-bar').style.width = `${percent}%`;
+            document.getElementById('extraction-progress-message').innerText =
+                job.message || (running ? 'Extração em andamento...' : 'Extração concluída.');
+            const units = job.total_units
+                ? `Unidades: ${job.processed_units || 0}/${job.total_units}`
+                : 'Preparando unidades';
+            const frames = `Frames salvos: ${job.frames_saved || 0}`;
+            const error = failed && job.error ? ` • Erro: ${job.error}` : '';
+            document.getElementById('extraction-progress-details').innerText =
+                `${units} • ${frames}${error}`;
+            panel.className = failed
+                ? "p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl space-y-3"
+                : "p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl space-y-3";
+            setExtractionControlsBusy(running);
+        }
+
+        async function pollExtractionStatus() {
+            try {
+                const res = await fetch(`/api/campaigns/${campaignId}/extract/status`);
+                const job = await res.json();
+                if (!res.ok) throw new Error(job.detail || 'Não foi possível consultar a extração.');
+                renderExtractionProgress(job);
+                if (job.status === 'completed') {
+                    clearInterval(extractionPollTimer);
+                    extractionPollTimer = null;
+                    await loadCampaignDetails();
+                    if (extractionStartedHere) {
+                        extractionStartedHere = false;
+                        alert('Extração concluída com sucesso!');
+                    }
+                } else if (job.status === 'failed') {
+                    clearInterval(extractionPollTimer);
+                    extractionPollTimer = null;
+                    extractionStartedHere = false;
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function startExtractionPolling() {
+            if (extractionPollTimer) clearInterval(extractionPollTimer);
+            pollExtractionStatus();
+            extractionPollTimer = setInterval(pollExtractionStatus, 750);
+        }
+
+        async function resumeExtractionMonitoring() {
+            try {
+                const res = await fetch(`/api/campaigns/${campaignId}/extract/status`);
+                if (!res.ok) return;
+                const job = await res.json();
+                renderExtractionProgress(job);
+                if (job.status === 'queued' || job.status === 'running') {
+                    startExtractionPolling();
+                }
+            } catch (err) {
+                console.error(err);
             }
         }
 
@@ -1665,7 +1783,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
         }
 
-        loadCampaignDetails();
+        loadCampaignDetails().then(resumeExtractionMonitoring);
     </script>
 </body>
 </html>"""
@@ -3279,28 +3397,45 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             st = source_status(workspace, source_id)
             if st.get("frames", 0) > 0:
                 raise WorkflowError("A segunda etapa (extração de frames) já foi concluída e não pode ser alterada.")
-            if req is not None:
-                source = load_source(workspace, source_id)
-                extraction = req.model_dump()
-                if req.mode == "smart":
-                    if not req.model:
-                        raise WorkflowError("O modo inteligente exige um modelo.")
-                    model_path = workspace.resolve_path(req.model).resolve()
-                    try:
-                        model_path.relative_to(workspace.models_root.resolve())
-                    except ValueError as exc:
-                        raise WorkflowError("O modelo deve estar dentro de models/.") from exc
-                    if not model_path.is_file():
-                        raise WorkflowError(f"Modelo nao encontrado: {model_path}")
-                else:
-                    extraction["model"] = None
-                source["extraction"] = extraction
-                dump_yaml(workspace.source_config_path(source_id), source)
-                register_source_manifest(workspace, source_id)
-            manifest_path = extract_source_frames(workspace, source_id)
-            return {"status": "ok", "manifest": str(manifest_path)}
+            request = req
+            if request is not None and request.mode == "smart":
+                if not request.model:
+                    raise WorkflowError("O modo inteligente exige um modelo.")
+                model_path = workspace.resolve_path(request.model).resolve()
+                try:
+                    model_path.relative_to(workspace.models_root.resolve())
+                except ValueError as exc:
+                    raise WorkflowError("O modelo deve estar dentro de models/.") from exc
+                if not model_path.is_file():
+                    raise WorkflowError(f"Modelo nao encontrado: {model_path}")
+
+            def run_extraction(progress_callback):
+                if request is not None:
+                    source = load_source(workspace, source_id)
+                    extraction = request.model_dump()
+                    if request.mode != "smart":
+                        extraction["model"] = None
+                    source["extraction"] = extraction
+                    dump_yaml(workspace.source_config_path(source_id), source)
+                    register_source_manifest(workspace, source_id)
+                return extract_source_frames(
+                    workspace,
+                    source_id,
+                    progress_callback=progress_callback,
+                )
+
+            return extraction_manager.start(source_id, run_extraction)
         except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/sources/{source_id}/extract/status")
+    @app.get("/api/campaigns/{source_id}/extract/status")
+    def api_extract_frames_status(source_id: str):
+        try:
+            source_status(workspace, source_id)
+            return extraction_manager.get(source_id)
+        except WorkflowError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
 
     @app.post("/api/sources/{source_id}/import-tasks")
     @app.post("/api/campaigns/{source_id}/import-tasks")

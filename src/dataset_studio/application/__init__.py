@@ -10,6 +10,7 @@ from dataset_studio.application.archive_service import (
     verify_archive_snapshot,
 )
 from dataset_studio.application.job_service import JobManager
+from dataset_studio.application.extraction_service import ExtractionJobManager
 from dataset_studio.application.deployment_service import (
     export_deployment_bundle,
     validate_deployment_bundle,
@@ -42,6 +43,7 @@ from dataset_studio.ports.trainer import TrainingParams
 
 __all__ = [
     "JobManager",
+    "ExtractionJobManager",
     "archive_status",
     "attach_archive_to_dataset",
     "attach_archive_to_run",

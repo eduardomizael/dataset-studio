@@ -7,8 +7,9 @@ from pathlib import Path
 import yaml
 from fastapi.testclient import TestClient
 
-from dataset_studio.application import JobManager
+from dataset_studio.application import ExtractionJobManager, JobManager
 from dataset_studio.domain import (
+    WorkflowError,
     Workspace,
 )
 from dataset_studio.web.app import create_web_app
@@ -98,6 +99,52 @@ def test_job_manager_persists_training_log_and_metadata(tmp_path: Path, monkeypa
     assert completed == ["completed"]
 
 
+def test_extraction_manager_blocks_duplicates_and_reports_progress():
+    manager = ExtractionJobManager()
+    running = threading.Event()
+    release = threading.Event()
+
+    def runner(report):
+        report(
+            {
+                "stage": "extracting",
+                "message": "Extraindo unidade leva_01.",
+                "percent": 42,
+                "processed_units": 0,
+                "total_units": 2,
+                "frames_saved": 17,
+            }
+        )
+        running.set()
+        assert release.wait(timeout=2)
+        return "frame_manifest.json"
+
+    started = manager.start("source_01", runner)
+    assert started["status"] in {"queued", "running"}
+    assert running.wait(timeout=1)
+
+    state = manager.get("source_01")
+    assert state["status"] == "running"
+    assert state["percent"] == 42
+    assert state["frames_saved"] == 17
+
+    try:
+        manager.start("source_01", runner)
+    except WorkflowError as exc:
+        assert "já está em execução" in str(exc)
+    else:
+        raise AssertionError("Uma segunda extração simultânea deveria ser rejeitada.")
+
+    release.set()
+    for _ in range(100):
+        state = manager.get("source_01")
+        if state["status"] == "completed":
+            break
+        threading.Event().wait(0.01)
+    assert state["status"] == "completed"
+    assert state["percent"] == 100
+
+
 def test_web_app_endpoints(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("DATASET_STUDIO_CREDENTIALS_DIR", str(tmp_path / "credentials"))
     ws = Workspace.from_path(tmp_path)
@@ -161,6 +208,17 @@ def test_release_page_preserves_selected_annotation_revision(tmp_path: Path):
         "annotation_revisions: annotationRevisionId ? { [campaignId]: annotationRevisionId } : {}"
         in release_page.text
     )
+
+
+def test_source_page_exposes_extraction_progress_and_polling(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    page = TestClient(create_web_app(ws)).get("/source.html")
+
+    assert page.status_code == 200
+    assert 'id="extraction-progress"' in page.text
+    assert 'id="extraction-progress-bar"' in page.text
+    assert "/extract/status" in page.text
+    assert "Extração em andamento" in page.text
 
 
 def test_completed_steps_locking(tmp_path: Path):

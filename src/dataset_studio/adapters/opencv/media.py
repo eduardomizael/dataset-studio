@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import cv2
 
@@ -17,6 +17,27 @@ from dataset_studio.domain import (
     sha256,
     source_capture_units,
 )
+
+ProgressCallback = Callable[[dict[str, Any]], None]
+
+
+def _report_progress(
+    callback: ProgressCallback | None,
+    *,
+    fraction: float,
+    stage: str,
+    message: str,
+    frames_saved: int,
+) -> None:
+    if callback is not None:
+        callback(
+            {
+                "fraction": max(0.0, min(1.0, fraction)),
+                "stage": stage,
+                "message": message,
+                "frames_saved": frames_saved,
+            }
+        )
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -136,6 +157,7 @@ def scan_video(
     *,
     start_frame: int = 0,
     end_frame: int | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[int]:
     """Escaneia um vídeo com amostragem para detectar a presença de alvos (peixes)."""
 
@@ -145,6 +167,8 @@ def scan_video(
     fish_frames: list[int] = []
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_idx = start_frame
+    effective_end = end_frame or int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    interval = max(1, (effective_end - start_frame) // 100)
     while True:
         if end_frame is not None and frame_idx >= end_frame:
             break
@@ -155,6 +179,14 @@ def scan_video(
             dets = predictor.predict(frame)
             if dets:
                 fish_frames.append(frame_idx)
+        if (frame_idx - start_frame) % interval == 0:
+            _report_progress(
+                progress_callback,
+                fraction=(frame_idx - start_frame) / max(1, effective_end - start_frame),
+                stage="scanning",
+                message="Localizando trechos com objetos.",
+                frames_saved=0,
+            )
         frame_idx += 1
     cap.release()
     return fish_frames
@@ -196,6 +228,7 @@ def run_uniform_mode(
     unit_id: str | None = None,
     start_seconds: float = 0.0,
     end_seconds: float | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, int]:
     """Executa a extração no modo uniforme com passo de amostragem constante."""
     cap = cv2.VideoCapture(str(video_path))
@@ -219,6 +252,7 @@ def run_uniform_mode(
     frame_idx = start_frame
     saved = 0
     analyzed = 0
+    interval = max(1, (end_frame - start_frame) // 100)
     while True:
         if frame_idx >= end_frame:
             break
@@ -242,8 +276,23 @@ def run_uniform_mode(
                 )
             )
             saved += 1
+        if (frame_idx - start_frame) % interval == 0:
+            _report_progress(
+                progress_callback,
+                fraction=(frame_idx - start_frame) / max(1, end_frame - start_frame),
+                stage="extracting",
+                message="Extraindo frames em intervalo uniforme.",
+                frames_saved=saved,
+            )
         frame_idx += 1
     cap.release()
+    _report_progress(
+        progress_callback,
+        fraction=1.0,
+        stage="extracting",
+        message="Unidade extraída.",
+        frames_saved=saved,
+    )
     return {"saved": saved, "analyzed": analyzed}
 
 
@@ -269,6 +318,7 @@ def run_smart_mode(
     unit_id: str | None = None,
     start_seconds: float = 0.0,
     end_seconds: float | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, int]:
     """Extrai mais frames nas regiões com objetos e negativos esparsos fora delas."""
 
@@ -296,6 +346,18 @@ def run_smart_mode(
         scan_step,
         start_frame=start_frame,
         end_frame=end_frame,
+        progress_callback=(
+            (
+                lambda update: progress_callback(
+                    {
+                        **update,
+                        "fraction": float(update.get("fraction", 0.0)) * 0.45,
+                    }
+                )
+            )
+            if progress_callback
+            else None
+        ),
     )
     detected_ranges = find_fish_ranges(detected_frames, margin, end_frame)
     cap = cv2.VideoCapture(str(video_path))
@@ -303,6 +365,7 @@ def run_smart_mode(
     frame_idx = start_frame
     negative_count = 0
     stats = {"fish": 0, "negative": 0, "analyzed": 0}
+    interval = max(1, (end_frame - start_frame) // 100)
     while True:
         if frame_idx >= end_frame:
             break
@@ -344,8 +407,26 @@ def run_smart_mode(
             else:
                 stats["negative"] += 1
                 negative_count += 1
+        if (frame_idx - start_frame) % interval == 0:
+            _report_progress(
+                progress_callback,
+                fraction=0.45
+                + 0.55
+                * (frame_idx - start_frame)
+                / max(1, end_frame - start_frame),
+                stage="extracting",
+                message="Extraindo e classificando frames selecionados.",
+                frames_saved=stats["fish"] + stats["negative"],
+            )
         frame_idx += 1
     cap.release()
+    _report_progress(
+        progress_callback,
+        fraction=1.0,
+        stage="extracting",
+        message="Unidade extraída.",
+        frames_saved=stats["fish"] + stats["negative"],
+    )
     return stats
 
 
@@ -354,6 +435,7 @@ def extract_source_frames(
     source_id: str,
     *,
     weights_path: Path | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Executa o pipeline de extração de frames (Uniforme ou Inteligente com YOLO) para uma fonte de dados."""
 
@@ -388,12 +470,49 @@ def extract_source_frames(
                 "Ultralytics nao esta instalado. Execute: uv sync --all-extras"
             ) from exc
 
-    for unit in source_capture_units(source_data):
+    units = source_capture_units(source_data)
+    total_units = len(units)
+    total_saved = 0
+    if progress_callback is not None:
+        progress_callback(
+            {
+                "stage": "initializing",
+                "message": f"Preparando {total_units} unidade(s) de captura.",
+                "percent": 0,
+                "processed_units": 0,
+                "total_units": total_units,
+                "frames_saved": 0,
+            }
+        )
+
+    for unit_index, unit in enumerate(units):
         video_path = videos_dir / unit["source_video"]
         if video_path.is_file():
+            def report_unit(update: dict[str, Any]) -> None:
+                if progress_callback is None:
+                    return
+                fraction = float(update.get("fraction", 0.0))
+                progress_callback(
+                    {
+                        "stage": update.get("stage", "extracting"),
+                        "message": (
+                            f"{unit['unit_id']}: "
+                            f"{update.get('message', 'Extraindo frames.')}"
+                        ),
+                        "percent": int(
+                            ((unit_index + fraction) / max(1, total_units)) * 100
+                        ),
+                        "processed_units": unit_index,
+                        "total_units": total_units,
+                        "current_unit": unit["unit_id"],
+                        "frames_saved": total_saved
+                        + int(update.get("frames_saved", 0)),
+                    }
+                )
+
             if mode == "smart":
                 assert predictor is not None
-                run_smart_mode(
+                stats = run_smart_mode(
                     video_path,
                     predictor,
                     scan_step=int(extraction.get("scan_step", 15)),
@@ -406,12 +525,14 @@ def extract_source_frames(
                     unit_id=unit["unit_id"],
                     start_seconds=float(unit.get("start_seconds") or 0.0),
                     end_seconds=unit.get("end_seconds"),
+                    progress_callback=report_unit,
                 )
+                total_saved += stats["fish"] + stats["negative"]
             else:
                 frame_step = int(
                     extraction.get("uniform_frame_step", extraction.get("frame_step", 30))
                 )
-                run_uniform_mode(
+                stats = run_uniform_mode(
                     video_path,
                     frame_step,
                     images_out,
@@ -420,6 +541,20 @@ def extract_source_frames(
                     unit_id=unit["unit_id"],
                     start_seconds=float(unit.get("start_seconds") or 0.0),
                     end_seconds=unit.get("end_seconds"),
+                    progress_callback=report_unit,
+                )
+                total_saved += stats["saved"]
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "stage": "extracting",
+                        "message": f"Unidade {unit['unit_id']} concluída.",
+                        "percent": int(((unit_index + 1) / max(1, total_units)) * 100),
+                        "processed_units": unit_index + 1,
+                        "total_units": total_units,
+                        "current_unit": unit["unit_id"],
+                        "frames_saved": total_saved,
+                    }
                 )
 
     records_by_id = {str(item["frame_id"]): item for item in records}
@@ -435,6 +570,17 @@ def extract_source_frames(
         "frame_step": extraction.get("uniform_frame_step", extraction.get("frame_step")),
         "frames": [records_by_id[key] for key in sorted(records_by_id)],
     }
+    if progress_callback is not None:
+        progress_callback(
+            {
+                "stage": "finalizing",
+                "message": "Gravando o manifesto da extração.",
+                "percent": 99,
+                "processed_units": total_units,
+                "total_units": total_units,
+                "frames_saved": total_saved,
+            }
+        )
     manifest_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return manifest_path
 

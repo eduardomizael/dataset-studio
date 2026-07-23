@@ -48,7 +48,9 @@ Permite escolher como os frames dos vídeos serão extraídos para imagem:
 - **Modo Inteligente (Com Modelo)**:
   - Utiliza um modelo pré-treinado localizado na pasta `models/` para detectar regiões com presença de objetos e concentrar a amostragem onde há dados relevantes.
 
-Ao clicar em **`▶ Executar Extração de Frames`**, as imagens são geradas em `dataset/sources/<source_id>/frames/raw/images/`, e a configuração usada fica registrada em `source.yaml` e `frame_manifest.json`.
+Ao clicar em **`▶ Executar Extração de Frames`**, o processamento começa em segundo plano. O botão e os parâmetros ficam bloqueados durante a execução, e a tela mostra percentual, unidade de captura atual, unidades concluídas e quantidade de frames salvos. Se a página for recarregada enquanto o servidor continua ativo, o acompanhamento é retomado automaticamente. Ao final, as imagens ficam em `dataset/sources/<source_id>/frames/raw/images/`, e a configuração usada fica registrada em `source.yaml` e `frame_manifest.json`.
+
+O servidor aceita apenas uma extração ativa por origem. Isso evita que cliques repetidos ou duas abas iniciem processamentos concorrentes sobre os mesmos arquivos.
 
 ### Unidades experimentais e vídeos contínuos
 
