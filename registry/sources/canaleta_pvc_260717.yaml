@@ -22,6 +22,39 @@ videos:
   sha256: 0b0d49c791cdba99d1f403eddae816e845d43c280de73538e432f65aef18592c
 - name: 2026-07-17 15-56-45.mp4
   sha256: 2904c3ee18550eb546f79cd4264c29ee870f256ac7acac48b7b41196cae53065
+capture_units:
+- unit_id: 2026-07-17 15-26-33.mp4
+  source_video: 2026-07-17 15-26-33.mp4
+  start_seconds: 0.0
+  end_seconds: null
+- unit_id: 2026-07-17 15-31-41.mp4
+  source_video: 2026-07-17 15-31-41.mp4
+  start_seconds: 0.0
+  end_seconds: null
+- unit_id: 2026-07-17 15-33-35.mp4
+  source_video: 2026-07-17 15-33-35.mp4
+  start_seconds: 0.0
+  end_seconds: null
+- unit_id: 2026-07-17 15-36-50.mp4
+  source_video: 2026-07-17 15-36-50.mp4
+  start_seconds: 0.0
+  end_seconds: null
+- unit_id: 2026-07-17 15-39-23.mp4
+  source_video: 2026-07-17 15-39-23.mp4
+  start_seconds: 0.0
+  end_seconds: null
+- unit_id: 2026-07-17 15-42-47.mp4
+  source_video: 2026-07-17 15-42-47.mp4
+  start_seconds: 0.0
+  end_seconds: null
+- unit_id: 2026-07-17 15-50-35.mp4
+  source_video: 2026-07-17 15-50-35.mp4
+  start_seconds: 0.0
+  end_seconds: null
+- unit_id: 2026-07-17 15-56-45.mp4
+  source_video: 2026-07-17 15-56-45.mp4
+  start_seconds: 0.0
+  end_seconds: null
 extraction_model_sha256: 2ba3458e01e0138b4e90555e922f618e218ee5c852191d6d5e5b63991d06c7c5
 annotation_model_sha256: 2ba3458e01e0138b4e90555e922f618e218ee5c852191d6d5e5b63991d06c7c5
 prediction_profile_sha256: c62d78dbcab554b271d8561c76d93c3e1df75dad9b2731f2b4f5ef2894aafbbb

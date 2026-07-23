@@ -7,6 +7,8 @@ sources:
 annotation_revisions:
   canaleta_pvc_260717: rev_project_2_test
 provisional: true
+evaluation_level: legacy
+quality_assessment: {}
 images: 581
 boxes: 2374
 excluded_frames: 296
