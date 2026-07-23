@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dataset_studio.application import (
     TrainingParams,
+    begin_training_record,
+    finalize_training_record,
+    registry_status,
+    resolve_model_reference,
     training_recipe,
     source_status,
     version_status,
@@ -96,6 +103,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     vt.add_argument("--optimizer", default="auto", help="Otimizador")
     vt.add_argument("--dry-run", action="store_true", help="Mostra a receita e o comando de treino sem executar")
 
+    registry_parser = subparsers.add_parser(
+        "registry", help="Consultar e validar a proveniência"
+    )
+    registry_sub = registry_parser.add_subparsers(dest="subcommand")
+    registry_sub.add_parser("status", help="Validar modelos, datasets e runs")
+
     return parser.parse_args(args)
 
 
@@ -159,8 +172,12 @@ def main(args: list[str] | None = None) -> int:
             st = version_status(ws, parsed.id)
             print(json.dumps(st, indent=2, ensure_ascii=False))
         elif parsed.subcommand == "train":
+            training_id = (
+                f"t_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_"
+                f"{uuid.uuid4().hex[:6]}"
+            )
             params = TrainingParams(
-                model=parsed.model,
+                model=resolve_model_reference(ws, parsed.model),
                 epochs=parsed.epochs,
                 imgsz=parsed.imgsz,
                 batch=parsed.batch,
@@ -170,7 +187,7 @@ def main(args: list[str] | None = None) -> int:
                 lr0=parsed.lr0,
                 optimizer=parsed.optimizer,
                 project=str(ws.root / "runs" / "detect"),
-                name=parsed.id,
+                name=training_id,
             )
             recipe = training_recipe(ws, parsed.id, params)
             print("=" * 60)
@@ -182,8 +199,19 @@ def main(args: list[str] | None = None) -> int:
                 print("[DRY-RUN] NENHUM PROCESSO DE TREINO FOI INICIADO.")
             else:
                 print(f"[INICIANDO TREINAMENTO]: {recipe['command_str']}")
-                import subprocess
-                subprocess.run(recipe["command"], check=True)
+                begin_training_record(ws, training_id, parsed.id, params)
+                try:
+                    subprocess.run(recipe["command"], check=True)
+                except subprocess.CalledProcessError:
+                    finalize_training_record(ws, training_id, "failed")
+                    raise
+                else:
+                    finalize_training_record(ws, training_id, "completed")
+    elif parsed.command == "registry":
+        if parsed.subcommand == "status":
+            status = registry_status(ws)
+            print(json.dumps(status, indent=2, ensure_ascii=False))
+            return 0 if status["valid"] else 1
     else:
         print("Dataset Studio CLI v0.1.0. Use --help para ver os comandos disponíveis.")
 

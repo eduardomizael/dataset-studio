@@ -10,7 +10,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from dataset_studio.adapters.label_studio.process_supervisor import (
     process_group_options,
@@ -37,6 +37,7 @@ class JobManager:
         env: dict[str, str] | None = None,
         metadata: dict[str, Any] | None = None,
         log_path: Path | None = None,
+        on_complete: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Adiciona um job de treinamento à fila sequencial. Se não houver treino rodando, inicia imediatamente."""
         with self._lock:
@@ -56,11 +57,14 @@ class JobManager:
                 "metadata": metadata or {},
                 "log_path": str(log_path) if log_path is not None else None,
                 "_log_path": log_path,
+                "_on_complete": on_complete,
+                "_completion_notified": False,
                 "lines": [],
                 "process": None,
             }
             self._jobs[job_id] = job
             self._queue.append(job)
+            self._persist(job)
             self._process_queue_locked()
             return self._public(job)
 
@@ -104,6 +108,7 @@ class JobManager:
                 next_job["status"] = "failed"
                 next_job["lines"].append(f"Erro ao iniciar processo: {exc}")
                 self._persist(next_job)
+                self._notify_completion(next_job)
 
     def _collect_and_advance(self, job: dict[str, Any]) -> None:
         self._collect(job)
@@ -124,6 +129,7 @@ class JobManager:
             if job in self._queue:
                 self._queue.remove(job)
             self._persist(job)
+            self._notify_completion(job)
             return self._public(job)
 
     def start(
@@ -137,6 +143,7 @@ class JobManager:
         cooperative_stop: bool = False,
         metadata: dict[str, Any] | None = None,
         log_path: Path | None = None,
+        on_complete: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Inicia um novo processo em segundo plano e registra seu acompanhamento."""
 
@@ -181,6 +188,8 @@ class JobManager:
                 "metadata": metadata or {},
                 "log_path": str(log_path) if log_path is not None else None,
                 "_log_path": log_path,
+                "_on_complete": on_complete,
+                "_completion_notified": False,
                 "lines": [],
                 "process": process,
             }
@@ -225,6 +234,24 @@ class JobManager:
             if shutdown_file is not None:
                 shutdown_file.unlink(missing_ok=True)
             JobManager._persist(job)
+            JobManager._notify_completion(job)
+
+    @staticmethod
+    def _notify_completion(job: dict[str, Any]) -> None:
+        if job.get("_completion_notified"):
+            return
+        if job.get("status") not in {"completed", "failed", "stopped", "cancelled"}:
+            return
+        job["_completion_notified"] = True
+        callback = job.get("_on_complete")
+        if callback is None:
+            return
+        try:
+            callback(JobManager._public(job))
+        except Exception as exc:
+            metadata = job.setdefault("metadata", {})
+            metadata["registry_error"] = str(exc)
+            JobManager._persist(job)
 
     @staticmethod
     def _sanitize_for_json(obj: Any) -> Any:
@@ -245,7 +272,15 @@ class JobManager:
         payload = {
             key: JobManager._sanitize_for_json(value)
             for key, value in job.items()
-            if key not in {"process", "shutdown_file", "lines", "_log_path"}
+            if key
+            not in {
+                "process",
+                "shutdown_file",
+                "lines",
+                "_log_path",
+                "_on_complete",
+                "_completion_notified",
+            }
         }
         (log_path.parent / "workflow_job.json").write_text(
             json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -256,7 +291,14 @@ class JobManager:
         raw = {
             key: JobManager._sanitize_for_json(value)
             for key, value in job.items()
-            if key not in {"process", "shutdown_file", "_log_path"}
+            if key
+            not in {
+                "process",
+                "shutdown_file",
+                "_log_path",
+                "_on_complete",
+                "_completion_notified",
+            }
         }
         raw["log"] = "\n".join(job["lines"])
         return raw

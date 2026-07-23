@@ -29,6 +29,8 @@ A aplicação iniciará o servidor local e abrirá automaticamente o navegador n
 5. A materialização publica o dataset em `dataset/versions/<version_id>/`.
 6. A mesma versão materializada pode alimentar múltiplos treinamentos em `runs/detect/<training_id>/`.
 
+A integração com o Label Studio exige um token somente na primeira utilização do computador. Depois disso, o Dataset Studio cria ou reconhece o projeto de cada origem, importa tarefas sem duplicação e configura automaticamente a fila e as preanotações.
+
 Recursos podem ser excluídos conscientemente. A interface mostra dependências, oferece cascata, permite preservar vídeos e exige confirmação digitada; o usuário pode prosseguir mesmo quando a decisão deixar dependentes inválidos.
 
 ---
@@ -44,6 +46,7 @@ Toda a documentação do projeto está disponível na pasta [`docs/`](docs/):
 5. ⌨️ **[Referência da CLI](docs/CLI_REFERENCE.md)**: Comandos disponíveis e limitações atuais.
 6. 🛠️ **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Portas, CUDA, codecs, staging e recursos órfãos.
 7. 🔌 **[Guia de Adaptadores](docs/ADAPTERS_GUIDE.md)**: Contratos de predição e treinamento.
+8. 🧬 **[Registry de Modelos](docs/MODEL_REGISTRY.md)**: Proveniência, aliases, manifests retroativos e validação por SHA-256.
 
 ---
 

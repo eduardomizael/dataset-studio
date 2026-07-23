@@ -317,17 +317,30 @@ def list_annotation_revisions(
     defaults_or_ws: dict[str, Any] | Workspace, source_id: str
 ) -> list[str]:
     root = annotation_revisions_root(defaults_or_ws, source_id)
-    revisions = (
-        sorted(
-            path.name
+    revision_paths = (
+        [
+            path
             for path in root.iterdir()
             if path.is_dir()
             and (path / "export_annotations.json").is_file()
             and (path / "annotation_report.json").is_file()
-        )
+        ]
         if root.exists()
         else []
     )
+
+    def revision_order(path: Path) -> tuple[str, str]:
+        """Ordena pela criação real da revisão, não pelo nome escolhido."""
+        try:
+            report = json.loads(
+                (path / "annotation_report.json").read_text(encoding="utf-8")
+            )
+            validated_at = str(report.get("validated_at") or "")
+        except (OSError, json.JSONDecodeError):
+            validated_at = ""
+        return validated_at, path.name
+
+    revisions = [path.name for path in sorted(revision_paths, key=revision_order)]
     if (
         export_annotations_path(defaults_or_ws, source_id).exists()
         and annotation_report_path(defaults_or_ws, source_id).exists()

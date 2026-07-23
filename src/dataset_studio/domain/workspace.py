@@ -108,6 +108,14 @@ class Workspace:
     def config_root(self) -> Path:
         return self.root / "config"
 
+    @property
+    def registry_root(self) -> Path:
+        return self.root / "registry"
+
+    @property
+    def runs_root(self) -> Path:
+        return self.root / "runs" / "detect"
+
     def source_root(self, source_id: str) -> Path:
         return self.sources_root / source_id
 

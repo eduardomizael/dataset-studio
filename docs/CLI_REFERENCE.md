@@ -121,7 +121,20 @@ Parâmetros disponíveis:
 - --optimizer
 - --dry-run
 
-Na CLI, o treinamento é síncrono. A fila sequencial, IDs exclusivos, logs persistidos e cancelamento de jobs pertencem ao fluxo web/API.
+Na CLI, o treinamento é síncrono, mas recebe `training_id` exclusivo e gera os
+mesmos registros de proveniência. A fila sequencial, monitoramento em tempo
+real e cancelamento de jobs pertencem ao fluxo web/API.
+
+## Registry
+
+Validar datasets, runs, modelos, aliases e hashes:
+
+~~~powershell
+uv run --all-extras dataset-studio registry status
+~~~
+
+O comando retorna código 1 quando encontra uma inconsistência estrutural ou de
+SHA-256. Arquivos históricos sabidamente ausentes aparecem como avisos.
 
 ## Limitações atuais da CLI
 

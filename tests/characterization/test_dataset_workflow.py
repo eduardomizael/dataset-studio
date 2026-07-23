@@ -343,6 +343,31 @@ def test_partial_annotation_revisions_are_append_only_and_reusable(tmp_path: Pat
     assert deferred_id in partial_manifest.read_text(encoding="utf-8")
 
 
+def test_annotation_revisions_are_ordered_by_validation_time_not_name(tmp_path: Path):
+    config, _campaign = create_fixture_campaign(tmp_path)
+    export = tmp_path / "annotations.json"
+    export.write_text(json.dumps(native_export()), encoding="utf-8")
+
+    _, older_report_path = accept_native_export(
+        config, "capture_test", export, revision_id="rev_z_older"
+    )
+    _, newer_report_path = accept_native_export(
+        config, "capture_test", export, revision_id="rev_a_newer"
+    )
+
+    older_report = json.loads(older_report_path.read_text(encoding="utf-8"))
+    older_report["validated_at"] = "2026-07-22T10:00:00+00:00"
+    older_report_path.write_text(json.dumps(older_report), encoding="utf-8")
+    newer_report = json.loads(newer_report_path.read_text(encoding="utf-8"))
+    newer_report["validated_at"] = "2026-07-23T10:00:00+00:00"
+    newer_report_path.write_text(json.dumps(newer_report), encoding="utf-8")
+
+    assert list_annotation_revisions(config, "capture_test") == [
+        "rev_z_older",
+        "rev_a_newer",
+    ]
+
+
 def test_release_is_built_from_accepted_json_and_split_by_whole_video(tmp_path: Path):
     config, campaign = create_fixture_campaign(tmp_path)
     extra_id = "normal_f000002"

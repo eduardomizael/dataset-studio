@@ -27,13 +27,26 @@ from dataset_studio.adapters.label_studio.runner import (
     wait_for_port,
     wait_for_ml_backend,
 )
+from dataset_studio.adapters.label_studio.api_client import LabelStudioClient
+from dataset_studio.adapters.label_studio.credentials import (
+    delete_label_studio_credentials,
+    public_credentials_status,
+    save_label_studio_credentials,
+)
 from dataset_studio.adapters.opencv.media import extract_source_frames, preannotate_source_frames
 from dataset_studio.application import (
     JobManager,
     TrainingParams,
+    begin_training_record,
+    ensure_label_studio_project,
+    finalize_training_record,
     inspect_finished_tasks,
+    label_studio_integration_status,
     list_available_models,
     preview_split_metrics,
+    promote_registered_model,
+    registry_status,
+    resolve_model_reference,
     source_status,
     training_recipe,
     version_status,
@@ -46,13 +59,18 @@ from dataset_studio.domain import (
     build_version,
     create_source,
     create_version,
+    dataset_registry_path,
     delete_source,
     delete_version,
     dump_yaml,
     list_sources,
+    list_registered_aliases,
+    list_registered_models,
     list_versions,
     load_source,
     load_yaml,
+    run_registry_path,
+    sha256,
     validate_id,
 )
 
@@ -76,6 +94,20 @@ class LabelStudioStartReq(BaseModel):
 
     enable_ml: bool = False
     model: str | None = None
+    allow_partial_predictions: bool = False
+
+
+class LabelStudioSettingsReq(BaseModel):
+    """Credencial configurada uma única vez para a instância do Label Studio."""
+
+    base_url: str = "http://127.0.0.1:8080"
+    api_key: str = Field(min_length=5, repr=False)
+
+
+class LabelStudioPrepareReq(BaseModel):
+    """Opções explícitas para preparar um projeto já iniciado."""
+
+    allow_partial_predictions: bool = False
 
 
 
@@ -858,6 +890,44 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     <!-- Opções do Servidor -->
                     <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
                         <h4 class="font-bold text-indigo-300 text-sm">🚀 Servidor de Detecção (ML Backend) + Label Studio</h4>
+
+                        <div id="ls-integration-panel" class="p-3.5 bg-slate-950/70 border border-slate-700 rounded-xl space-y-3">
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-slate-200 text-xs">Integração automática</span>
+                                        <span id="ls-integration-status" class="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-bold">Verificando</span>
+                                    </div>
+                                    <p id="ls-integration-message" class="text-[11px] text-slate-400 mt-1">
+                                        Verificando vínculo com o Label Studio...
+                                    </p>
+                                </div>
+                                <button type="button" onclick="toggleLabelStudioSettings()" class="text-[11px] text-indigo-300 hover:text-indigo-200">
+                                    Configurar conexão
+                                </button>
+                            </div>
+                            <div id="ls-integration-details" class="hidden text-[11px] text-slate-400"></div>
+                            <button id="ls-confirm-partial" type="button" onclick="confirmPartialPredictionCoverage()" class="hidden px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-medium rounded-lg">
+                                Continuar conscientemente com cobertura parcial
+                            </button>
+                            <div id="ls-settings-form" class="hidden border-t border-slate-800 pt-3 space-y-2">
+                                <p class="text-[11px] text-slate-400">
+                                    Esta configuração é feita uma única vez por computador. O Dataset Studio usará a API oficial para criar, importar e configurar os próximos projetos automaticamente.
+                                </p>
+                                <label class="block text-[11px] text-slate-300">URL do Label Studio</label>
+                                <input id="ls-base-url" value="http://127.0.0.1:8080" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                <label class="block text-[11px] text-slate-300">Token de acesso</label>
+                                <input id="ls-api-key" type="password" autocomplete="off" placeholder="Cole o token obtido em Account & Settings" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                <div class="flex flex-wrap gap-2 pt-1">
+                                    <button type="button" onclick="saveLabelStudioSettings()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-medium rounded-lg">
+                                        Salvar e preparar esta origem
+                                    </button>
+                                    <button type="button" onclick="toggleLabelStudioSettings()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] rounded-lg">
+                                        Fechar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         
                         <div class="flex items-center gap-2">
                             <input type="checkbox" id="enable-ml-backend" onchange="toggleMlBackendOpts()" class="w-4 h-4 rounded bg-slate-800 text-indigo-600">
@@ -919,6 +989,125 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         function toggleStep(stepNum) {
             const body = document.getElementById(`step-${stepNum}-body`);
             body.classList.toggle('hidden');
+        }
+
+        function toggleLabelStudioSettings(forceOpen = null) {
+            const form = document.getElementById('ls-settings-form');
+            if (!form) return;
+            const open = forceOpen === null ? form.classList.contains('hidden') : forceOpen;
+            form.classList.toggle('hidden', !open);
+        }
+
+        function renderLabelStudioIntegration(info) {
+            if (!info) return;
+            const badge = document.getElementById('ls-integration-status');
+            const message = document.getElementById('ls-integration-message');
+            const details = document.getElementById('ls-integration-details');
+            const partialButton = document.getElementById('ls-confirm-partial');
+            const credentials = info.credentials || {};
+            const integration = info.integration || (info.project_id ? info : null);
+            const plan = info.prediction_plan || (integration && integration.prediction_coverage) || null;
+            const status = info.status || (integration ? 'ready' : 'unknown');
+            const styles = {
+                'ready': 'bg-emerald-500/10 text-emerald-400',
+                'ready-to-prepare': 'bg-indigo-500/10 text-indigo-300',
+                'needs-token': 'bg-amber-500/10 text-amber-300',
+                'partial-predictions': 'bg-amber-500/10 text-amber-300',
+                'waiting-import': 'bg-slate-800 text-slate-400',
+            };
+            const labels = {
+                'ready': 'Pronta',
+                'ready-to-prepare': 'Pronta para preparar',
+                'needs-token': 'Configuração única',
+                'partial-predictions': 'Requer confirmação',
+                'waiting-import': 'Aguardando tarefas',
+            };
+            badge.className = `px-2 py-0.5 rounded text-[10px] font-bold ${styles[status] || 'bg-rose-500/10 text-rose-300'}`;
+            badge.innerText = labels[status] || 'Atenção';
+            message.innerText = info.message || (
+                status === 'ready'
+                    ? 'Projeto vinculado e configurações verificadas automaticamente.'
+                    : 'Verifique a configuração da integração.'
+            );
+            if (credentials.base_url) {
+                document.getElementById('ls-base-url').value = credentials.base_url;
+            } else if (integration && integration.base_url) {
+                document.getElementById('ls-base-url').value = integration.base_url;
+            }
+            const detailParts = [];
+            const projectId = info.project_id || (integration && integration.project_id);
+            if (projectId) detailParts.push(`Projeto: ${projectId}`);
+            if (plan && plan.uses_predictions) {
+                detailParts.push(`Predição: ${plan.covered_tasks}/${plan.total_tasks} tarefas`);
+                if (plan.selected_version) detailParts.push(`Versão: ${plan.selected_version}`);
+            } else if (plan) {
+                detailParts.push('Rotulação manual sem predições');
+            }
+            details.innerText = detailParts.join(' • ');
+            details.classList.toggle('hidden', detailParts.length === 0);
+            partialButton.classList.toggle('hidden', status !== 'partial-predictions');
+            if (status === 'needs-token') toggleLabelStudioSettings(true);
+        }
+
+        async function loadLabelStudioIntegration() {
+            if (!campaignId) return;
+            try {
+                const res = await fetch(`/api/sources/${encodeURIComponent(campaignId)}/label-studio`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Falha ao verificar integração.');
+                renderLabelStudioIntegration(data);
+            } catch (err) {
+                renderLabelStudioIntegration({status: 'error', message: err.message});
+            }
+        }
+
+        async function prepareLabelStudioProject(allowPartial = false) {
+            const res = await fetch(`/api/sources/${encodeURIComponent(campaignId)}/label-studio/prepare`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({allow_partial_predictions: allowPartial})
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Falha ao preparar o projeto.');
+            renderLabelStudioIntegration(data);
+            return data;
+        }
+
+        async function confirmPartialPredictionCoverage() {
+            const confirmed = confirm(
+                'Algumas tarefas serão abertas sem preanotações. Você poderá desenhar as caixas manualmente. Deseja continuar?'
+            );
+            if (!confirmed) return;
+            try {
+                const prepared = await prepareLabelStudioProject(true);
+                alert(`Projeto ${prepared.project_id} preparado com a cobertura parcial informada.`);
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function saveLabelStudioSettings() {
+            const baseUrl = document.getElementById('ls-base-url').value.trim();
+            const apiKey = document.getElementById('ls-api-key').value.trim();
+            if (!apiKey) {
+                alert('Informe o token de acesso do Label Studio.');
+                return;
+            }
+            try {
+                const res = await fetch('/api/label-studio/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({base_url: baseUrl, api_key: apiKey})
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Não foi possível validar o token.');
+                document.getElementById('ls-api-key').value = '';
+                const prepared = await prepareLabelStudioProject(false);
+                toggleLabelStudioSettings(false);
+                alert(`Integração configurada. Projeto ${prepared.project_id} pronto para rotulação.`);
+            } catch (err) {
+                alert(err.message);
+            }
         }
 
         function selectExtractionMode(mode) {
@@ -1060,6 +1249,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Erro ao iniciar servidor do Label Studio.');
+                renderLabelStudioIntegration(data.integration);
 
                 if (data.url) {
                     if (labelStudioTab) {
@@ -1067,6 +1257,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     } else {
                         window.open(data.url, '_blank');
                     }
+                }
+
+                if (data.integration && data.integration.status === 'needs-token') {
+                    alert(
+                        'O Label Studio foi iniciado. Faça login, copie uma única vez o token em ' +
+                        'Account & Settings > Access Token e cole no painel de integração do Dataset Studio.'
+                    );
                 }
 
                 if (btn) {
@@ -1105,7 +1302,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 
                 const cleanName = exportName ? exportName.replace(new RegExp('\\.json$', 'i'), '') : 'release';
                 const relId = `release_${campaignId}_${cleanName}`;
-                window.location.href = `/release.html?campaign=${campaignId}&id=${encodeURIComponent(relId)}`;
+                const revisionId = data.revision_id;
+                if (!revisionId) throw new Error('O servidor não informou a revisão criada para este JSON.');
+                window.location.href = `/release.html?campaign=${encodeURIComponent(campaignId)}&id=${encodeURIComponent(relId)}&revision_id=${encodeURIComponent(revisionId)}`;
             } catch (err) {
                 alert(err.message);
             }
@@ -1234,6 +1433,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     }
                     const msg3 = document.getElementById('step-3-locked-msg');
                     if (msg3) msg3.classList.remove('hidden');
+                    loadLabelStudioIntegration();
                 }
 
                 // finished_tasks info
@@ -1390,6 +1590,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 Status: ...
             </span>
         </header>
+        <div id="release-revision-notice" class="px-4 py-3 bg-purple-500/10 border border-purple-500/30 rounded-xl text-xs text-purple-200">
+            Revisão de anotação: <span id="release-revision-id" class="font-mono font-bold">carregando...</span>
+        </div>
 
         <!-- Seção 1: Divisão dos Vídeos e Calculadora de Splits -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
@@ -1563,6 +1766,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         const urlParams = new URLSearchParams(window.location.search);
         const releaseId = urlParams.get('id') || 'release_default';
         let campaignId = urlParams.get('campaign') || urlParams.get('source');
+        let annotationRevisionId = urlParams.get('revision_id') || urlParams.get('revision');
 
         // Se campaignId não foi passado explicitamente, extrai do releaseId (ex: release_canaleta_pvc_260717_export)
         if (!campaignId && releaseId && releaseId.startsWith('release_')) {
@@ -1584,6 +1788,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         campaign_id: campaignId,
+                        revision_id: annotationRevisionId,
                         assignments: {
                             train: videoList.filter(v => videoAssignments[v] === 'train').map(v => campaignId + '/' + v),
                             val: videoList.filter(v => videoAssignments[v] === 'val').map(v => campaignId + '/' + v),
@@ -1634,6 +1839,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     body: JSON.stringify({
                         release_id: targetRelId,
                         campaigns: [campaignId],
+                        annotation_revisions: annotationRevisionId ? { [campaignId]: annotationRevisionId } : {},
                         assignments: {
                             train: trainV,
                             val: valV,
@@ -1911,6 +2117,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     if (srcList.length > 0) {
                         campaignId = srcList[0];
                     }
+                    const storedRevisions = existingReleaseInfo.annotation_revisions || {};
+                    if (storedRevisions[campaignId]) {
+                        annotationRevisionId = storedRevisions[campaignId];
+                    }
                 }
 
                 // Se a URL não tiver campaignId nem conseguir derivar, busca a primeira campanha disponível
@@ -1944,7 +2154,17 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     throw new Error(`Falha ao carregar dados da origem: ${resSt.statusText}`);
                 }
                 const st = await resSt.json();
-                const report = st.annotation_report || {};
+                if (!annotationRevisionId) {
+                    annotationRevisionId = st.latest_annotation_revision || null;
+                }
+                const revision = (st.annotation_revisions || []).find(
+                    item => item.revision_id === annotationRevisionId
+                );
+                if (!annotationRevisionId || !revision) {
+                    throw new Error('A revisão de anotação selecionada não existe nesta origem.');
+                }
+                const report = revision;
+                document.getElementById('release-revision-id').innerText = annotationRevisionId;
                 const videoDetails = st.video_details || [];
                 const notesMap = {};
                 videoDetails.forEach(v => {
@@ -1961,9 +2181,23 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     return;
                 }
 
-                // Atribuir por padrão com base no comentário/nota do vídeo ou 80% train, 20% val
+                // Atribuir por padrão com base no comentário/nota do vídeo ou 80% train, 20% val.
+                // Para releases existentes, preservar exatamente a configuração registrada.
+                const storedAssignments = existingReleaseInfo ? (existingReleaseInfo.assignments || {}) : {};
+                const storedRoleByVideo = {};
+                Object.entries(storedAssignments).forEach(([role, items]) => {
+                    (items || []).forEach(item => {
+                        const prefix = `${campaignId}/`;
+                        const videoName = item.startsWith(prefix) ? item.slice(prefix.length) : item;
+                        storedRoleByVideo[videoName] = role;
+                    });
+                });
                 const mid = Math.ceil(videoList.length * 0.8);
                 videoList.forEach((v, idx) => {
+                    if (storedRoleByVideo[v]) {
+                        videoAssignments[v] = storedRoleByVideo[v];
+                        return;
+                    }
                     const noteStr = (notesMap[v] || '').toLowerCase().trim();
                     if (noteStr.includes('estresse') || noteStr.includes('stress')) {
                         videoAssignments[v] = 'test_stress';
@@ -2383,10 +2617,15 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         if not runs_dir.exists():
             return []
         items = []
+        registered_models = list_registered_models(workspace)
         for path in sorted(runs_dir.iterdir(), reverse=True):
             if path.is_dir():
                 best = path / "weights" / "best.pt"
                 args_yaml = path / "args.yaml"
+                registry_path = run_registry_path(workspace, path.name)
+                registry_run = (
+                    load_yaml(registry_path) if registry_path.is_file() else {}
+                )
                 model_name = "YOLO"
                 if args_yaml.exists():
                     try:
@@ -2394,16 +2633,30 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         model_name = args.get("model", "YOLO")
                     except Exception:
                         pass
+                persisted_status = None
+                workflow_path = path / "workflow_job.json"
+                if workflow_path.is_file():
+                    try:
+                        persisted_status = json.loads(
+                            workflow_path.read_text(encoding="utf-8")
+                        ).get("status")
+                    except (OSError, json.JSONDecodeError):
+                        persisted_status = None
                 items.append(
                     {
                         "name": path.name,
-                        "status": (
-                            json.loads((path / "workflow_job.json").read_text(encoding="utf-8")).get("status", "unknown")
-                            if (path / "workflow_job.json").is_file()
-                            else ("completed" if best.is_file() else "unknown")
-                        ),
+                        "status": registry_run.get("status")
+                        or persisted_status
+                        or ("completed" if best.is_file() else "unknown"),
                         "model": model_name,
                         "best": str(best) if best.is_file() else None,
+                        "state": registry_run.get("state"),
+                        "dataset_id": registry_run.get("dataset_id"),
+                        "initial_model_id": registry_run.get("initial_model_id"),
+                        "output_model_id": registry_run.get("output_model_id"),
+                        "output_model": registered_models.get(
+                            registry_run.get("output_model_id"), {}
+                        ),
                     }
                 )
         return items
@@ -2447,6 +2700,10 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 workflow_job = json.loads(workflow_job_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 workflow_job = {}
+        registry_path = run_registry_path(workspace, training_id)
+        registry_run = (
+            load_yaml(registry_path) if registry_path.is_file() else {}
+        )
 
         # Parser do relatório da release associada
         release_info = {}
@@ -2474,6 +2731,25 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
         except Exception:
             pass
+        if not release_info and registry_run.get("dataset_id"):
+            dataset_path = dataset_registry_path(
+                workspace, registry_run["dataset_id"]
+            )
+            if dataset_path.is_file():
+                dataset = load_yaml(dataset_path)
+                release_info = {
+                    "release_id": dataset["dataset_id"],
+                    "dataset_id": dataset["dataset_id"],
+                    "sources": dataset.get("sources", []),
+                    "assignments": dataset.get("splits", {}),
+                    "build_report": {
+                        "images": dataset.get("images"),
+                        "boxes": dataset.get("boxes"),
+                        "splits": dataset.get("splits", {}),
+                        "manifest_sha256": dataset.get("manifest_sha256"),
+                    },
+                    "provenance": dataset.get("provenance", {}),
+                }
 
         # Parser do CSV de resultados do YOLO (results.csv)
         metrics = {
@@ -2531,13 +2807,27 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         for img in sorted(runs_dir.glob("*.png")):
             image_files.append(img.name)
 
+        registered_model = list_registered_models(workspace).get(
+            registry_run.get("output_model_id"), {}
+        )
+        registered_best = None
+        for stored_path in registered_model.get("paths", []):
+            candidate = workspace.resolve_path(stored_path)
+            if candidate.is_file() and candidate.suffix.lower() == ".pt":
+                registered_best = candidate
+                break
+        effective_best = best_path if best_path.is_file() else registered_best
+
         return {
             "id": training_id,
             "name": training_id,
-            "status": "completed" if best_path.is_file() else "in_progress",
-            "has_best": best_path.is_file(),
+            "status": registry_run.get(
+                "status", "completed" if effective_best else "in_progress"
+            ),
+            "state": registry_run.get("state"),
+            "has_best": effective_best is not None,
             "has_last": last_path.is_file(),
-            "best_path": str(best_path) if best_path.is_file() else None,
+            "best_path": str(effective_best) if effective_best else None,
             "last_path": str(last_path) if last_path.is_file() else None,
             "args": training_args,
             "release": release_info,
@@ -2545,33 +2835,81 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             "duration_seconds": duration_seconds,
             "log": log_content[-20000:],
             "images": image_files,
+            "registry": registry_run,
+            "registered_model": registered_model,
         }
 
     class PromoteModelReq(BaseModel):
         target_name: str | None = None
+        overwrite: bool = False
 
     @app.post("/api/trainings/{training_id}/promote")
     def api_promote_model(training_id: str, req: PromoteModelReq = Body(default_factory=PromoteModelReq)):
         runs_dir = workspace.root / "runs" / "detect" / training_id
         best_path = runs_dir / "weights" / "best.pt"
         if not best_path.is_file():
+            registry_path = run_registry_path(workspace, training_id)
+            registry_run = (
+                load_yaml(registry_path) if registry_path.is_file() else {}
+            )
+            model = list_registered_models(workspace).get(
+                registry_run.get("output_model_id"), {}
+            )
+            best_path = next(
+                (
+                    workspace.resolve_path(path)
+                    for path in model.get("paths", [])
+                    if workspace.resolve_path(path).is_file()
+                    and workspace.resolve_path(path).suffix.lower() == ".pt"
+                ),
+                best_path,
+            )
+        if not best_path.is_file():
             raise HTTPException(status_code=400, detail="Este treinamento não possui o modelo 'best.pt' finalizado para promover.")
 
         target_name = (req.target_name or f"{training_id}_best.pt").strip()
         if not target_name.endswith(".pt"):
             target_name += ".pt"
+        if Path(target_name).name != target_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Informe somente o nome do arquivo, sem diretórios.",
+            )
 
         dest_dir = workspace.models_root
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = dest_dir / target_name
-
-        shutil.copy2(best_path, dest_path)
+        if dest_path.exists():
+            if sha256(dest_path) != sha256(best_path) and not req.overwrite:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Já existe um modelo diferente com esse nome. "
+                        "Escolha outro nome ou confirme a substituição explicitamente."
+                    ),
+                )
+        if not dest_path.exists() or sha256(dest_path) != sha256(best_path):
+            shutil.copy2(best_path, dest_path)
+        promoted = promote_registered_model(workspace, training_id, dest_path)
         rel_dest = dest_path.relative_to(workspace.root).as_posix()
         return {
             "status": "ok",
             "message": f"Modelo promovido com sucesso para '{rel_dest}'!",
             "promoted_name": target_name,
             "path": rel_dest,
+            "model_id": promoted["model_id"],
+            "sha256": promoted["sha256"],
+        }
+
+    @app.get("/api/registry/status")
+    def api_registry_status():
+        return registry_status(workspace)
+
+    @app.get("/api/registry/models")
+    def api_registry_models():
+        return {
+            "models": list_registered_models(workspace),
+            "aliases": list_registered_aliases(workspace),
         }
 
     @app.get("/api/sources")
@@ -2759,14 +3097,86 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             online = wait_for_port(8080, timeout=15.0)
             if not online:
                 raise WorkflowError("O Label Studio nao respondeu na porta 8080.")
+            integration_status = label_studio_integration_status(
+                workspace, source_id
+            )
+            integration = None
+            if integration_status["credentials"]["configured"]:
+                integration = ensure_label_studio_project(
+                    workspace,
+                    source_id,
+                    allow_partial_predictions=req.allow_partial_predictions,
+                    ml_backend_url=(
+                        "http://127.0.0.1:9090" if req.enable_ml else None
+                    ),
+                )
+            target_url = (
+                integration["url"]
+                if integration
+                else integration_status["credentials"]["base_url"]
+            )
             return {
                 "status": "ok",
                 "online": online,
-                "url": "http://127.0.0.1:8080",
+                "url": target_url,
                 "ls_job": ls_job if isinstance(ls_job, dict) else None,
                 "ml_job": ml_job if isinstance(ml_job, dict) else None,
+                "integration": integration or integration_status,
             }
         except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/label-studio/settings")
+    def api_label_studio_settings():
+        return public_credentials_status()
+
+    @app.post("/api/label-studio/settings")
+    def api_save_label_studio_settings(req: LabelStudioSettingsReq):
+        try:
+            client = LabelStudioClient(req.base_url, req.api_key)
+            user = client.authenticate()
+            save_label_studio_credentials(req.base_url, req.api_key)
+            return {
+                "status": "ok",
+                "settings": public_credentials_status(),
+                "user": {
+                    "id": user.get("id") if isinstance(user, dict) else None,
+                    "email": user.get("email") if isinstance(user, dict) else None,
+                },
+            }
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.delete("/api/label-studio/settings")
+    def api_delete_label_studio_settings():
+        delete_label_studio_credentials()
+        return {"status": "ok", "settings": public_credentials_status()}
+
+    @app.get("/api/sources/{source_id}/label-studio")
+    @app.get("/api/campaigns/{source_id}/label-studio")
+    def api_label_studio_integration_status(source_id: str):
+        try:
+            return label_studio_integration_status(workspace, source_id)
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/sources/{source_id}/label-studio/prepare")
+    @app.post("/api/campaigns/{source_id}/label-studio/prepare")
+    def api_prepare_label_studio(
+        source_id: str,
+        req: LabelStudioPrepareReq = Body(default_factory=LabelStudioPrepareReq),
+    ):
+        try:
+            if not wait_for_port(8080, timeout=1.0):
+                raise WorkflowError(
+                    "Inicie o Label Studio antes de preparar o projeto."
+                )
+            return ensure_label_studio_project(
+                workspace,
+                source_id,
+                allow_partial_predictions=req.allow_partial_predictions,
+            )
+        except WorkflowError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @app.post("/api/sources/{source_id}/accept-export")
@@ -2904,8 +3314,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     "Execute: uv sync --all-extras"
                 )
             train_timestamp_id = f"t_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:6]}"
+            model_reference = resolve_model_reference(workspace, req.model)
             params = TrainingParams(
-                model=req.model,
+                model=model_reference,
                 epochs=req.epochs,
                 imgsz=req.imgsz,
                 batch=req.batch,
@@ -2919,6 +3330,12 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 extra_args={"exist_ok": True},
             )
             recipe = training_recipe(workspace, version_id, params)
+            begin_training_record(
+                workspace,
+                train_timestamp_id,
+                version_id,
+                params,
+            )
             job = job_manager.enqueue_training(
                 command=recipe["command"],
                 target=version_id,
@@ -2927,10 +3344,16 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 metadata={
                     "training_id": train_timestamp_id,
                     "release_id": version_id,
-                    "model": req.model,
+                    "model": model_reference,
+                    "model_reference": req.model,
                     "epochs": req.epochs,
                     "imgsz": req.imgsz,
                 },
+                on_complete=lambda completed_job: finalize_training_record(
+                    workspace,
+                    train_timestamp_id,
+                    completed_job["status"],
+                ),
             )
             return job
         except WorkflowError as exc:

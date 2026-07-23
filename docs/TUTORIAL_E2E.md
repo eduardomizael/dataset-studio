@@ -77,14 +77,26 @@ Na etapa de anotação:
 
 A API só declara sucesso depois de validar /health do backend e a disponibilidade do Label Studio.
 
-No Label Studio:
+Na primeira utilização neste computador:
 
-1. Crie um projeto de detecção.
-2. Use o conteúdo de label_studio/labeling_config.xml como interface.
-3. Importe label_studio/import_tasks.json.
-4. Se usar o backend ao vivo, registre http://127.0.0.1:9090 nas configurações de Machine Learning do projeto.
-5. Anote as imagens.
-6. Exporte no formato JSON nativo.
+1. Entre no Label Studio e copie um token em `Account & Settings > Access Token`.
+2. Cole o token no painel Integração automática do Dataset Studio.
+3. Clique em Salvar e preparar esta origem.
+
+Essa autorização é feita uma única vez. A partir dela, o Dataset Studio:
+
+- cria ou reconhece o projeto correspondente à origem;
+- aplica `label_studio/labeling_config.xml`;
+- importa `label_studio/import_tasks.json` apenas quando o projeto está vazio;
+- escolhe uma predição com cobertura completa;
+- habilita as caixas na fila `Label All Tasks`;
+- configura ordem sequencial e uma anotação por tarefa;
+- conecta automaticamente o ML Backend quando essa opção está habilitada;
+- abre diretamente o projeto correto.
+
+Se houver somente predições parciais, a interface mostra a cobertura antes de continuar. Para uma origem explicitamente manual, nenhuma predição é exigida.
+
+No Label Studio, basta revisar/anotar as imagens e exportar no formato JSON nativo.
 
 Os caminhos em import_tasks.json usam /data/local-files com o workspace como document root. Não é necessário duplicar as imagens.
 

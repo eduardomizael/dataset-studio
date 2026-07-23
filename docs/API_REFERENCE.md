@@ -146,11 +146,51 @@ allow_pending=true permite snapshot parcial e marca a versão derivada como prov
 ~~~json
 {
   "enable_ml": true,
-  "model": "models/modelo.pt"
+  "model": "models/modelo.pt",
+  "allow_partial_predictions": false
 }
 ~~~
 
 Quando enable_ml é verdadeiro, o ML Backend é iniciado primeiro e precisa responder com saúde UP na porta 9090. Em seguida, o Label Studio é iniciado na porta 8080. A API só retorna online=true quando o Label Studio responde.
+
+Se a credencial única estiver configurada, a rota também cria ou reconhece o projeto da origem, evita reimportação, aplica as configurações seguras, conecta o ML Backend quando solicitado e retorna a URL direta do projeto.
+
+### GET /api/label-studio/settings
+
+Informa se a credencial única está configurada. O token nunca é devolvido.
+
+### POST /api/label-studio/settings
+
+Valida e salva a conexão no perfil local do usuário:
+
+~~~json
+{
+  "base_url": "http://127.0.0.1:8080",
+  "api_key": "token-copiado-do-label-studio"
+}
+~~~
+
+A autenticação detecta automaticamente token legado ou Personal Access Token.
+
+### DELETE /api/label-studio/settings
+
+Remove a credencial local. Não exclui projetos nem anotações.
+
+### GET /api/sources/{source_id}/label-studio
+
+Retorna o estado da credencial, o vínculo persistido, as versões de predição, a cobertura e uma orientação contextual quando há uma ação manual.
+
+### POST /api/sources/{source_id}/label-studio/prepare
+
+Cria, reconhece ou revalida o projeto de forma idempotente:
+
+~~~json
+{
+  "allow_partial_predictions": false
+}
+~~~
+
+Por padrão, predições parciais são recusadas. `allow_partial_predictions=true` representa uma confirmação consciente de que algumas tarefas poderão abrir sem caixas.
 
 ## Versões
 
@@ -233,7 +273,17 @@ Retorna parâmetros, logs, métricas, pesos, duração e versão associada. Trei
 
 ### POST /api/trainings/{training_id}/promote
 
-Promove best.pt para models/. O corpo opcional aceita `target_name`; use apenas um nome de arquivo terminado em `.pt`, sem componentes de diretório.
+Promove `best.pt` para `models/` e registra o novo alias no registry. O corpo
+aceita `target_name` e `overwrite`. Sobrescrita de um peso diferente é recusada
+por padrão; componentes de diretório não são aceitos.
+
+### GET /api/registry/status
+
+Valida referências e SHA-256 de datasets, runs, modelos, aliases e artefatos.
+
+### GET /api/registry/models
+
+Retorna o catálogo de modelos e o mapa de aliases físicos.
 
 ### DELETE /api/trainings/{training_id}?confirm={training_id}
 

@@ -48,6 +48,8 @@ def test_job_manager_requests_cooperative_shutdown(tmp_path: Path):
 
 def test_job_manager_persists_training_log_and_metadata(tmp_path: Path, monkeypatch):
     finished = threading.Event()
+    registry_finished = threading.Event()
+    completed = []
 
     class FakeProcess:
         pid = 12346
@@ -77,9 +79,14 @@ def test_job_manager_persists_training_log_and_metadata(tmp_path: Path, monkeypa
         target="release:test",
         metadata={"training": {"model": "models/candidate.pt"}},
         log_path=output / "workflow.log",
+        on_complete=lambda job: (
+            completed.append(job["status"]),
+            registry_finished.set(),
+        ),
     )
 
     assert finished.wait(timeout=1)
+    assert registry_finished.wait(timeout=1)
     state = manager.list()[0]
     payload = json.loads(
         (output / "workflow_job.json").read_text(encoding="utf-8")
@@ -88,9 +95,11 @@ def test_job_manager_persists_training_log_and_metadata(tmp_path: Path, monkeypa
     assert "epoch 1/1" in (output / "workflow.log").read_text(encoding="utf-8")
     assert payload["status"] == "completed"
     assert payload["metadata"]["training"]["model"] == "models/candidate.pt"
+    assert completed == ["completed"]
 
 
-def test_web_app_endpoints(tmp_path: Path):
+def test_web_app_endpoints(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("DATASET_STUDIO_CREDENTIALS_DIR", str(tmp_path / "credentials"))
     ws = Workspace.from_path(tmp_path)
     app = create_web_app(ws)
     client = TestClient(app)
@@ -129,6 +138,29 @@ def test_web_app_endpoints(tmp_path: Path):
     index = client.get("/")
     assert index.status_code == 200
     assert "Dataset Studio" in index.text
+    settings = client.get("/api/label-studio/settings")
+    assert settings.status_code == 200
+    assert settings.json()["configured"] is False
+    assert "api_key" not in settings.json()
+
+
+def test_release_page_preserves_selected_annotation_revision(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    client = TestClient(create_web_app(ws))
+
+    source_page = client.get("/source.html")
+    release_page = client.get("/release.html")
+
+    assert source_page.status_code == 200
+    assert "data.revision_id" in source_page.text
+    assert "&revision_id=${encodeURIComponent(revisionId)}" in source_page.text
+    assert release_page.status_code == 200
+    assert "let annotationRevisionId = urlParams.get('revision_id')" in release_page.text
+    assert "revision_id: annotationRevisionId" in release_page.text
+    assert (
+        "annotation_revisions: annotationRevisionId ? { [campaignId]: annotationRevisionId } : {}"
+        in release_page.text
+    )
 
 
 def test_completed_steps_locking(tmp_path: Path):
@@ -175,6 +207,7 @@ def test_completed_steps_locking(tmp_path: Path):
 
 
 def test_start_label_studio_endpoint_and_shutdown(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("DATASET_STUDIO_CREDENTIALS_DIR", str(tmp_path / "credentials"))
     started = []
     monkeypatch.setattr(
         "dataset_studio.web.app.start_label_studio_job",

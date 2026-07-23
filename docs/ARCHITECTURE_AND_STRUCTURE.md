@@ -89,6 +89,8 @@ dataset-studio/
 │       │   │   ├── predictor.py # Adaptador de inferência YOLO da Ultralytics
 │       │   │   └── trainer.py   # Montador de comandos e receitas de treino YOLO
 │       │   └── label_studio/
+│       │       ├── api_client.py  # Cliente da API oficial e autenticação automática
+│       │       ├── credentials.py # Credencial única fora do repositório
 │       │       ├── ml_backend.py # Servidor ML Backend de detecção local (porta 9090)
 │       │       ├── runner.py    # Runner de variáveis de ambiente do Label Studio
 │       │       └── process_supervisor.py # Gerenciador de processos filhos/grupos
@@ -96,6 +98,7 @@ dataset-studio/
 │       ├── application/         # Serviços de Orquestração da Aplicação
 │       │   ├── __init__.py
 │       │   ├── source_service.py   # Status de origens e inspeção de finished_tasks
+│       │   ├── label_studio_service.py # Vínculo, preflight e importação idempotente
 │       │   ├── version_service.py  # Status de versões e calculadora de splits
 │       │   ├── campaign_service.py # Alias legado
 │       │   ├── release_service.py  # Alias legado
@@ -145,6 +148,16 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
 4. **`runs/detect/<training_id>/`**:
    - `workflow_job.json`: Estado persistido, parâmetros e `version_id` de origem.
    - `train.log`, `results.csv`, `args.yaml`, gráficos e `weights/best.pt`.
+   - `run.yaml`: Manifest consolidado do treinamento.
+   - `provenance/`: Snapshot da versão consumida pelo treinamento.
+
+5. **`registry/`**:
+   - `models.yaml`: Identidades lógicas, hashes, pais, origem e estado dos modelos.
+   - `aliases.yaml`: Caminhos físicos associados a cada `model_id`.
+   - `datasets/<dataset_id>.yaml`: Manifests nativos ou reconstruídos.
+   - `runs/<training_id>.yaml`: Relação dataset → modelo inicial → checkpoint.
+   - Registros reconstruídos preservam `origin` e `confidence`; nunca são
+     apresentados como evidência produzida durante o treinamento.
 
 ---
 
@@ -152,16 +165,24 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
 
 - Uploads são escritos em staging e publicados em `videos/<source_id>/` somente após validação.
 - A existência de `import_tasks.json` fixa a origem e bloqueia reconstrução pelo domínio, API e interface.
+- `label_studio/integration.json` registra o projeto vinculado, hashes e cobertura, mas não contém o token.
+- A importação no Label Studio é idempotente: um projeto não vazio só é reutilizado quando sua origem e contagem de tarefas são compatíveis.
+- A predição automática prioriza cobertura total; cobertura parcial exige confirmação explícita.
 - Consultas `GET` não aceitam exportações nem criam revisões.
 - Cada revisão é um snapshot explícito de uma exportação nativa do Label Studio.
 - Uma versão exige todos os vídeos atribuídos exatamente uma vez entre `train`, `val`, `test_normal` e `test_stress`.
 - A materialização ocorre em um diretório temporário. O diretório final só é substituído depois que todos os artefatos são concluídos.
 - `manifest.csv` registra hashes da imagem de origem, imagem materializada e label; `build_report.json` registra os hashes do manifesto e da configuração.
+- Antes do treinamento, a versão e o modelo inicial são fixados no registry por
+  ID e SHA-256. Ao terminar, métricas e hashes dos checkpoints são consolidados.
+- Um alias não cria um novo modelo: pesos byte a byte idênticos compartilham o
+  mesmo `model_id`.
 - Exclusão é uma operação destrutiva explícita, separada da imutabilidade durante o ciclo normal.
 
 ## 5. Processos e autonomia
 
 - O Label Studio usa a porta 8080 e recebe o workspace como document root para arquivos locais.
+- A API oficial do Label Studio cria ou reconhece o projeto, configura a fila e evita ajustes repetitivos por origem.
 - O ML Backend usa a porta 9090, valida `/health` antes de a API declarar sucesso e carrega modelo, classes, confiança, device e ROI da origem.
 - O treinador chama `sys.executable` do próprio Dataset Studio. Nenhum caminho para outro repositório é permitido.
 - No Windows, o extra `cuda` resolve PyTorch pelo índice oficial CUDA 12.8 configurado em `pyproject.toml`.

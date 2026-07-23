@@ -2,6 +2,18 @@
 
 from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTrainer
 from dataset_studio.application.job_service import JobManager
+from dataset_studio.application.label_studio_service import (
+    ensure_label_studio_project,
+    label_studio_integration_status,
+)
+from dataset_studio.application.registry_service import (
+    begin_training_record,
+    finalize_training_record,
+    promote_registered_model,
+    registry_status,
+    resolve_model_reference,
+    snapshot_version_dataset,
+)
 from dataset_studio.application.source_service import (
     campaign_status,
     inspect_finished_tasks,
@@ -18,6 +30,14 @@ from dataset_studio.ports.trainer import TrainingParams
 
 __all__ = [
     "JobManager",
+    "ensure_label_studio_project",
+    "label_studio_integration_status",
+    "begin_training_record",
+    "finalize_training_record",
+    "promote_registered_model",
+    "registry_status",
+    "resolve_model_reference",
+    "snapshot_version_dataset",
     "source_status",
     "campaign_status",
     "inspect_finished_tasks",

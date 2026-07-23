@@ -67,16 +67,27 @@ Ao clicar em **`▶ Gerar import_tasks.json`**, o arquivo é salvo em `dataset/s
 ### Etapa 4: Label Studio, ML Backend e Exportação
 Fornece integração com a rotulação e monitoramento automático de conclusão:
 
-1. **Servidor de Detecção (ML Backend)**:
+1. **Configuração única da integração**:
+   - Na primeira utilização neste computador, inicie o Label Studio, abra `Account & Settings > Access Token` e cole o token no painel **Integração automática**.
+   - O token é validado pela API oficial e armazenado fora do repositório, no perfil local do usuário. Ele não precisa ser informado novamente para cada origem ou versão de dataset.
+   - Nas utilizações seguintes, o Dataset Studio cria ou reconhece o projeto, aplica `labeling_config.xml`, importa as tarefas uma única vez e configura a fila automaticamente.
+2. **Escolha segura das predições**:
+   - A ferramenta seleciona uma versão que cubra todas as tarefas, habilita as preanotações na fila, usa ordem sequencial e limita cada tarefa a uma anotação.
+   - Se nenhuma versão cobrir tudo, a interface informa a quantidade exata e exige confirmação antes de permitir imagens sem caixas.
+   - Se a origem foi criada para rotulação manual, a ausência de predições é tratada como intencional e não gera alerta.
+3. **Servidor de Detecção (ML Backend)**:
    - Opção para ativar o servidor de inferência em segundo plano na porta `9090` e selecionar qual modelo de `models/` ele deve carregar para auxiliar a rotulação ao vivo no Label Studio.
+   - Quando habilitado, o backend é registrado ou atualizado automaticamente no projeto pela API; não é necessário abrir as configurações de Machine Learning do Label Studio.
    - Botão **`🚀 Iniciar Label Studio (+ ML Backend)`**.
-2. **Pasta de Exportação Automática (`label_studio/finished_tasks`)**:
+4. **Pasta de Exportação Automática (`label_studio/finished_tasks`)**:
    - Instrução visual do caminho exato onde o arquivo JSON exportado pelo Label Studio deve ser salvo:
      `dataset/sources/<source_id>/label_studio/finished_tasks/`
-3. **Detecção e Métricas Automáticas**:
+5. **Detecção e Métricas Automáticas**:
    - O Dataset Studio detecta os JSONs dessa pasta, mas não os aceita silenciosamente. O usuário escolhe explicitamente qual exportação transformar em revisão.
    - Exibe o **Painel de Métricas**: Total de Imagens, Total de Bboxes, Negativos Confirmados e Contagem por Classe/Vídeo.
    - Cada exportação pode gerar uma revisão independente. A mesma origem admite múltiplas revisões e múltiplas versões de dataset.
+
+O vínculo fica registrado em `label_studio/integration.json`, com o ID do projeto, hashes dos arquivos fixados, versão de predição escolhida e cobertura. O token de acesso nunca é gravado nesse arquivo.
 
 ---
 
@@ -108,6 +119,10 @@ Na tela da versão materializada:
    - Um terminal interativo na tela exibe as métricas de perda, época atual e andamento ao vivo.
 4. **Conclusão**:
    - Ao finalizar, o sistema exibe os melhores pesos gerados (`best.pt`) e métricas finais.
+   - O registry consolida automaticamente o dataset, modelo inicial, modelo-pai,
+     hashes, melhor época e checkpoint resultante.
+   - Pesos promovidos podem continuar com nomes amigáveis, mas sua identidade é
+     o `model_id` associado ao SHA-256.
 
 ---
 

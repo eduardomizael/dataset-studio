@@ -53,6 +53,40 @@ Se o executável estiver ausente, repita uv sync --all-extras. O Dataset Studio 
 
 O Label Studio abre normalmente na tela de login. Uma resposta HTTP 200 em /user/login/ confirma que o servidor está disponível.
 
+## Integração automática pede token
+
+Isso ocorre somente na primeira utilização do Label Studio neste computador:
+
+1. inicie o Label Studio;
+2. faça login;
+3. abra `Account & Settings > Access Token`;
+4. copie um token;
+5. cole no painel Integração automática do Dataset Studio;
+6. clique em Salvar e preparar esta origem.
+
+O token é usado pela API oficial e não é salvo dentro da origem ou do repositório. Também é possível fornecê-lo por ambiente:
+
+~~~powershell
+$env:DATASET_STUDIO_LABEL_STUDIO_API_KEY = "seu-token"
+$env:DATASET_STUDIO_LABEL_STUDIO_URL = "http://127.0.0.1:8080"
+~~~
+
+## Label All Tasks abre sem caixas
+
+O Dataset Studio verifica automaticamente:
+
+- se existem predições no `import_tasks.json`;
+- quais versões de modelo aparecem;
+- quantas tarefas cada versão cobre;
+- se as preanotações estão habilitadas;
+- se `model_version` corresponde à versão selecionada.
+
+A seleção prioriza cobertura completa, mesmo que exista uma versão mais recente em apenas parte das tarefas. Se nenhuma versão cobrir tudo, a preparação é interrompida e a interface informa a cobertura exata.
+
+Não altere o SQLite do Label Studio no fluxo normal. Use o botão de preparação novamente para reaplicar as configurações pela API oficial.
+
+Importante: `Label All Tasks` abre a próxima tarefa pendente da fila; clicar diretamente numa linha abre aquela tarefa específica e pode mostrar uma anotação humana já concluída.
+
 ## ML Backend não fica saudável
 
 O Dataset Studio consulta http://127.0.0.1:9090/health antes de declarar sucesso.

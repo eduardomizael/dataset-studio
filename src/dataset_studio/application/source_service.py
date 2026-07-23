@@ -108,6 +108,7 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
         revisions.append(
             {
                 "revision_id": revision_id,
+                "validated_at": revision_report.get("validated_at"),
                 "snapshot_type": revision_report.get("snapshot_type", "complete"),
                 "tasks_completed": revision_report.get("tasks_completed", 0),
                 "tasks_deferred": revision_report.get("tasks_deferred", 0),
