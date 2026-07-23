@@ -3,15 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from dataset_studio.application import (
     TrainingParams,
     begin_training_record,
+    export_deployment_bundle,
     finalize_training_record,
+    validate_deployment_bundle,
 )
 from dataset_studio.domain import (
     Workspace,
+    WorkflowError,
     dump_yaml,
     list_registered_models,
     load_yaml,
@@ -121,3 +125,51 @@ def test_training_registry_captures_dataset_parent_and_output_hashes(tmp_path: P
     assert api_training.json()["registered_model"]["parent_model_id"] == started[
         "initial_model_id"
     ]
+
+    deployment = export_deployment_bundle(
+        ws, completed["output_model_id"], deployment_id="deploy_training_one"
+    )
+    deployment_root = ws.deployments_root / "deploy_training_one"
+    deployed_model = deployment_root / deployment["artifact"]["path"]
+    assert deployment["immutable"] is True
+    assert deployment["model"]["dataset_id"] == "version_registry"
+    assert deployment["artifact"]["sha256"] == sha256(deployed_model)
+    assert load_yaml(
+        deployment_root / "deployment_manifest.yaml"
+    ) == deployment
+
+    api_deployment = client.post(
+        f"/api/models/{completed['output_model_id']}/deploy",
+        json={"deployment_id": "deploy_training_one"},
+    )
+    assert api_deployment.status_code == 200
+    assert api_deployment.json()["manifest_path"] == (
+        "deployments/deploy_training_one/deployment_manifest.yaml"
+    )
+    deployed_model.write_bytes(b"tampered-after-export")
+    with pytest.raises(WorkflowError, match="SHA-256 divergente"):
+        validate_deployment_bundle(ws, "deploy_training_one")
+
+
+def test_deployment_rejects_artifact_that_differs_from_registry(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    create_version_snapshot(ws)
+    model = ws.models_root / "model.pt"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"original")
+    params = TrainingParams(
+        model=str(model),
+        epochs=1,
+        project=str(ws.runs_root),
+        name="training_tampered",
+    )
+    begin_training_record(ws, "training_tampered", "version_registry", params)
+    weights = ws.runs_root / "training_tampered" / "weights"
+    weights.mkdir(parents=True)
+    best = weights / "best.pt"
+    best.write_bytes(b"best")
+    completed = finalize_training_record(ws, "training_tampered", "completed")
+    best.write_bytes(b"tampered")
+
+    with pytest.raises(WorkflowError, match="não corresponde ao SHA-256"):
+        export_deployment_bundle(ws, completed["output_model_id"])

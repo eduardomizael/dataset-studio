@@ -12,6 +12,7 @@ from pathlib import Path
 from dataset_studio.application import (
     TrainingParams,
     begin_training_record,
+    export_deployment_bundle,
     finalize_training_record,
     registry_status,
     resolve_model_reference,
@@ -108,6 +109,21 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
     registry_sub = registry_parser.add_subparsers(dest="subcommand")
     registry_sub.add_parser("status", help="Validar modelos, datasets e runs")
+    deploy = registry_sub.add_parser(
+        "deploy", help="Exportar bundle imutável para implantação"
+    )
+    deploy.add_argument("--model-id", required=True, help="ID lógico do modelo")
+    deploy.add_argument(
+        "--deployment-id",
+        default=None,
+        help="ID do bundle; por padrão usa o model_id",
+    )
+    deploy.add_argument(
+        "--artifact",
+        type=Path,
+        default=None,
+        help="Alias físico específico a exportar",
+    )
 
     return parser.parse_args(args)
 
@@ -212,6 +228,19 @@ def main(args: list[str] | None = None) -> int:
             status = registry_status(ws)
             print(json.dumps(status, indent=2, ensure_ascii=False))
             return 0 if status["valid"] else 1
+        if parsed.subcommand == "deploy":
+            manifest = export_deployment_bundle(
+                ws,
+                parsed.model_id,
+                deployment_id=parsed.deployment_id,
+                artifact_path=parsed.artifact,
+            )
+            manifest_path = (
+                ws.deployments_root
+                / manifest["deployment_id"]
+                / "deployment_manifest.yaml"
+            )
+            print(f"[OK] Bundle imutável exportado em: {manifest_path}")
     else:
         print("Dataset Studio CLI v0.1.0. Use --help para ver os comandos disponíveis.")
 

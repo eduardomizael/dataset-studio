@@ -31,3 +31,5 @@ models/*
 videos/*
 !videos/.gitkeep
 runs/*
+deployments/*
+!deployments/.gitkeep

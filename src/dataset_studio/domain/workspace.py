@@ -116,6 +116,10 @@ class Workspace:
     def runs_root(self) -> Path:
         return self.root / "runs" / "detect"
 
+    @property
+    def deployments_root(self) -> Path:
+        return self.root / "deployments"
+
     def source_root(self, source_id: str) -> Path:
         return self.sources_root / source_id
 

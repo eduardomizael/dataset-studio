@@ -71,6 +71,39 @@ Estados suportados:
 Promoção adiciona um alias e altera o estado. Ela não cria artificialmente um
 novo modelo quando o hash do peso é o mesmo.
 
+## Bundle de implantação
+
+Ao promover um treinamento pela interface, o Dataset Studio também cria um
+bundle imutável em:
+
+```text
+deployments/<model_id>/
+├── model.pt
+└── deployment_manifest.yaml
+```
+
+O manifest relaciona o artefato ao `model_id`, dataset, treinamento,
+checkpoint-pai, métricas e parâmetros recuperáveis. O SHA-256 é recalculado
+depois da cópia. Aplicações consumidoras devem validar o manifest antes de
+carregar o modelo.
+
+Modelos já registrados também podem ser exportados pela CLI:
+
+```powershell
+dataset-studio --workspace . registry deploy `
+  --model-id model-y26n-d03fixed-s43-best
+```
+
+Ou pela API:
+
+```text
+POST /api/models/{model_id}/deploy
+```
+
+Exportar um modelo candidato, legado ou com proveniência incompleta é
+permitido. O bundle registra avisos para que a decisão continue explícita, sem
+impedir o usuário.
+
 ## Geração automática
 
 Antes de um novo treinamento, o Dataset Studio:

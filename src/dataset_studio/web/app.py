@@ -39,6 +39,7 @@ from dataset_studio.application import (
     TrainingParams,
     begin_training_record,
     ensure_label_studio_project,
+    export_deployment_bundle,
     finalize_training_record,
     inspect_finished_tasks,
     label_studio_integration_status,
@@ -211,6 +212,16 @@ class TrainStartReq(BaseModel):
     patience: int = 50
     lr0: float = 0.01
     optimizer: str = "auto"
+
+
+class PromoteModelReq(BaseModel):
+    target_name: str | None = None
+    overwrite: bool = False
+
+
+class DeployModelReq(BaseModel):
+    deployment_id: str | None = None
+    artifact_path: str | None = None
 
 
 
@@ -2839,10 +2850,6 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             "registered_model": registered_model,
         }
 
-    class PromoteModelReq(BaseModel):
-        target_name: str | None = None
-        overwrite: bool = False
-
     @app.post("/api/trainings/{training_id}/promote")
     def api_promote_model(training_id: str, req: PromoteModelReq = Body(default_factory=PromoteModelReq)):
         runs_dir = workspace.root / "runs" / "detect" / training_id
@@ -2891,14 +2898,56 @@ def create_web_app(workspace: Workspace) -> FastAPI:
         if not dest_path.exists() or sha256(dest_path) != sha256(best_path):
             shutil.copy2(best_path, dest_path)
         promoted = promote_registered_model(workspace, training_id, dest_path)
+        deployment = export_deployment_bundle(
+            workspace,
+            promoted["model_id"],
+            artifact_path=dest_path,
+        )
+        deployment_manifest = (
+            workspace.deployments_root
+            / deployment["deployment_id"]
+            / "deployment_manifest.yaml"
+        )
         rel_dest = dest_path.relative_to(workspace.root).as_posix()
         return {
             "status": "ok",
-            "message": f"Modelo promovido com sucesso para '{rel_dest}'!",
+            "message": (
+                f"Modelo promovido para '{rel_dest}' e bundle imutável criado "
+                f"em '{deployment_manifest.relative_to(workspace.root).as_posix()}'."
+            ),
             "promoted_name": target_name,
             "path": rel_dest,
             "model_id": promoted["model_id"],
             "sha256": promoted["sha256"],
+            "deployment_id": deployment["deployment_id"],
+            "deployment_manifest": deployment_manifest.relative_to(
+                workspace.root
+            ).as_posix(),
+        }
+
+    @app.post("/api/models/{model_id}/deploy")
+    def api_deploy_model(
+        model_id: str,
+        req: DeployModelReq = Body(default_factory=DeployModelReq),
+    ):
+        try:
+            manifest = export_deployment_bundle(
+                workspace,
+                model_id,
+                deployment_id=req.deployment_id,
+                artifact_path=req.artifact_path,
+            )
+        except WorkflowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        manifest_path = (
+            workspace.deployments_root
+            / manifest["deployment_id"]
+            / "deployment_manifest.yaml"
+        )
+        return {
+            "status": "ok",
+            "deployment": manifest,
+            "manifest_path": manifest_path.relative_to(workspace.root).as_posix(),
         }
 
     @app.get("/api/registry/status")

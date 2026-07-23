@@ -277,6 +277,23 @@ Promove `best.pt` para `models/` e registra o novo alias no registry. O corpo
 aceita `target_name` e `overwrite`. Sobrescrita de um peso diferente é recusada
 por padrão; componentes de diretório não são aceitos.
 
+Além da promoção, cria automaticamente um bundle imutável em
+`deployments/<model_id>/`.
+
+### POST /api/models/{model_id}/deploy
+
+Exporta um modelo já registrado para um bundle de implantação. Corpo opcional:
+
+```json
+{
+  "deployment_id": "peixes-producao",
+  "artifact_path": "models/modelo.pt"
+}
+```
+
+O `deployment_id` é imutável. Uma repetição para o mesmo modelo é idempotente;
+um identificador já usado por outro modelo é recusado.
+
 ### GET /api/registry/status
 
 Valida referências e SHA-256 de datasets, runs, modelos, aliases e artefatos.

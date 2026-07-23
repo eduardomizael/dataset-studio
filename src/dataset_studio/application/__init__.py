@@ -2,6 +2,10 @@
 
 from dataset_studio.adapters.ultralytics.trainer import UltralyticsCommandTrainer
 from dataset_studio.application.job_service import JobManager
+from dataset_studio.application.deployment_service import (
+    export_deployment_bundle,
+    validate_deployment_bundle,
+)
 from dataset_studio.application.label_studio_service import (
     ensure_label_studio_project,
     label_studio_integration_status,
@@ -30,6 +34,8 @@ from dataset_studio.ports.trainer import TrainingParams
 
 __all__ = [
     "JobManager",
+    "export_deployment_bundle",
+    "validate_deployment_bundle",
     "ensure_label_studio_project",
     "label_studio_integration_status",
     "begin_training_record",

@@ -136,6 +136,17 @@ uv run --all-extras dataset-studio registry status
 O comando retorna código 1 quando encontra uma inconsistência estrutural ou de
 SHA-256. Arquivos históricos sabidamente ausentes aparecem como avisos.
 
+Exportar um modelo registrado para implantação:
+
+~~~powershell
+uv run --all-extras dataset-studio registry deploy `
+  --model-id model-y26n-d03fixed-s43-best `
+  --deployment-id peixes-producao
+~~~
+
+O comando cria `deployments/<deployment_id>/deployment_manifest.yaml` e uma
+cópia autocontida do artefato. Bundles existentes não são sobrescritos.
+
 ## Limitações atuais da CLI
 
 A CLI ainda não expõe:

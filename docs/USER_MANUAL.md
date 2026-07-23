@@ -123,6 +123,10 @@ Na tela da versão materializada:
      hashes, melhor época e checkpoint resultante.
    - Pesos promovidos podem continuar com nomes amigáveis, mas sua identidade é
      o `model_id` associado ao SHA-256.
+   - Ao promover pela interface, a ferramenta também cria automaticamente
+     `deployments/<model_id>/deployment_manifest.yaml` e uma cópia imutável do
+     peso. Esse diretório pode ser copiado para a aplicação ou equipamento de
+     inferência sem depender do servidor do Dataset Studio.
 
 ---
 
