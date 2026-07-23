@@ -13,7 +13,8 @@ O workspace padrão é o diretório atual. source e version são os termos canô
 
 ### source create
 
-Cria source.yaml a partir de vídeos já existentes.
+Cria source.yaml a partir de vídeos já existentes. Segmentos virtuais podem ser
+informados com `--capture-units-json`.
 
 ~~~powershell
 uv run --all-extras dataset-studio source create --id origem_peixes --videos-dir C:\dados\videos --pattern "*.mp4" --classes peixe
@@ -65,7 +66,7 @@ Use --allow-pending somente quando quiser aceitar tarefas adiadas ou incompletas
 ### version create
 
 ~~~powershell
-uv run --all-extras dataset-studio version create --id dataset_v1 --sources origem_peixes --assignments-json '{"train":["origem_peixes/video_01.mp4"],"val":["origem_peixes/video_02.mp4"],"test_normal":[],"test_stress":[]}'
+uv run --all-extras dataset-studio version create --id dataset_v1 --sources origem_peixes --evaluation-level standard --assignments-json '{"train":["origem_peixes/leva_01"],"val":["origem_peixes/leva_02"],"test_normal":["origem_peixes/leva_03"],"test_stress":[]}'
 ~~~
 
 Observações:

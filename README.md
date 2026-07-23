@@ -22,10 +22,12 @@ A aplicação iniciará o servidor local e abrirá automaticamente o navegador n
 
 ## Ciclo de vida
 
-1. Uma **origem** recebe vídeos e uma configuração de extração.
+1. Uma **origem** recebe vídeos, pode dividi-los em unidades experimentais
+   virtuais e registra a configuração de extração.
 2. A geração de `import_tasks.json` fixa a origem.
 3. Exportações do Label Studio geram revisões independentes.
-4. Uma **versão** seleciona revisões e atribui vídeos a `train`, `val`, `test_normal` e `test_stress`.
+4. Uma **versão** seleciona revisões e atribui unidades experimentais inteiras
+   a `train`, `val`, `test_normal` e `test_stress`.
 5. A materialização publica o dataset em `dataset/versions/<version_id>/`.
 6. A mesma versão materializada pode alimentar múltiplos treinamentos em `runs/detect/<training_id>/`.
 7. Cada treinamento avalia automaticamente o `best.pt` em `test_normal` e

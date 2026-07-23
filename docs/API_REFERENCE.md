@@ -305,6 +305,13 @@ Valida referências e SHA-256 de datasets, runs, modelos, aliases e artefatos.
 Retorna o índice derivado das origens, incluindo caminho e SHA-256 do
 `source.yaml` canônico. Os dados operacionais continuam no diretório da origem.
 
+Na criação de uma origem, `capture_units` é opcional. Cada item aceita
+`unit_id`, `source_video`, `start_seconds`, `end_seconds` e `note`. Quando
+omitido, cada vídeo completo vira uma unidade.
+
+Na criação de uma versão, `evaluation_level` aceita `pilot`, `standard` ou
+`robust`. O nível padrão exige unidades em treino, validação e teste normal.
+
 Retorna o catálogo de modelos e o mapa de aliases físicos.
 
 ### DELETE /api/trainings/{training_id}?confirm={training_id}

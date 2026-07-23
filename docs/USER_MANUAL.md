@@ -50,6 +50,20 @@ Permite escolher como os frames dos vídeos serão extraídos para imagem:
 
 Ao clicar em **`▶ Executar Extração de Frames`**, as imagens são geradas em `dataset/sources/<source_id>/frames/raw/images/`, e a configuração usada fica registrada em `source.yaml` e `frame_manifest.json`.
 
+### Unidades experimentais e vídeos contínuos
+
+O arquivo físico não precisa ser a unidade de divisão do dataset. Ao criar uma
+origem, um vídeo contínuo pode ser separado em levas por início e fim em
+segundos. Esses segmentos são virtuais: o Dataset Studio não recodifica nem
+duplica o vídeo.
+
+Cada unidade recebe um `unit_id`. Os frames registram o vídeo original, índice
+original, timestamp absoluto e timestamp relativo à unidade. Segmentos da mesma
+origem não podem se sobrepor. Intervalos de transição podem simplesmente ficar
+fora das unidades.
+
+Vídeos sem divisão continuam funcionando como uma unidade completa.
+
 ---
 
 ### Etapa 3: Pré-Anotação e Geração do `import_tasks.json`
@@ -95,15 +109,27 @@ O vínculo fica registrado em `label_studio/integration.json`, com o ID do proje
 
 Ao escolher uma revisão, você entra na montagem da versão (`/version.html`). `release` é mantido como alias legado.
 
-### 1. Divisão por Vídeo Completo (Sem Vazamento / Data Leakage)
-- O sistema exige que cada vídeo seja atribuído exatamente uma vez a `train`, `val`, `test_normal` ou `test_stress`.
-- A divisão ocorre por vídeo completo, evitando que frames correlacionados vazem entre splits.
+### 1. Divisão por Unidade Experimental (Sem Vazamento / Data Leakage)
+- O sistema exige que cada unidade seja atribuída exatamente uma vez a `train`, `val`, `test_normal` ou `test_stress`.
+- Todos os frames de uma leva permanecem juntos. Uma unidade nunca é dividida entre splits.
+- Unidades podem ser vídeos completos ou segmentos independentes de uma captura contínua.
 - `test_normal` mede generalização em condições representativas de operação.
 - `test_stress` reúne condições deliberadamente difíceis, como iluminação,
   densidade, reflexos ou movimento atípicos. Ele mede robustez e não deve ser
   usado para escolher parâmetros, épocas ou pesos.
 
-### 2. Materialização
+### 2. Níveis de avaliação
+
+- `pilot`: exige apenas treino. Permite começar com uma única unidade, mas usa
+  o treino como validação técnica e não comprova generalização.
+- `standard`: exige unidades independentes em treino, validação e teste normal.
+- `robust`: possui os requisitos do nível padrão e exige teste de estresse.
+
+A ferramenta bloqueia splits obrigatórios vazios ou sem frames utilizáveis.
+Quantidades baixas de frames e caixas geram avisos heurísticos, não uma falsa
+garantia estatística.
+
+### 3. Materialização
 - Ao clicar em **`🔨 Materializar Dataset`**, o sistema constrói tudo em staging e só publica após sucesso integral. São gerados `data.yaml`, `data_test_stress.yaml` quando aplicável, `manifest.csv`, `build_report.json`, imagens e labels YOLO.
 - Uma versão materializada não pode ser reconstruída ou editada no mesmo ID. Para mudar revisão ou splits, crie outra versão.
 

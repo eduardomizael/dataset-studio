@@ -129,8 +129,8 @@ dataset-studio/
 Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspace configurado:
 
 1. **`dataset/sources/<source_id>/`**:
-   - `source.yaml`: Vídeos, hashes, extração, classes, backend de anotação e
-     perfil de predição congelado.
+   - `source.yaml`: Vídeos, hashes, `capture_units`, extração, classes, backend
+     de anotação e perfil de predição congelado.
    - `frames/raw/images/`: Imagens extraídas dos vídeos.
    - `frame_manifest.json`: Registro estruturado dos frames e predições.
    - `label_studio/import_tasks.json`: Tarefas geradas para importação.
@@ -188,7 +188,13 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
 - A predição automática prioriza cobertura total; cobertura parcial exige confirmação explícita.
 - Consultas `GET` não aceitam exportações nem criam revisões.
 - Cada revisão é um snapshot explícito de uma exportação nativa do Label Studio.
-- Uma versão exige todos os vídeos atribuídos exatamente uma vez entre `train`, `val`, `test_normal` e `test_stress`.
+- Uma versão exige todas as unidades experimentais atribuídas exatamente uma
+  vez entre `train`, `val`, `test_normal` e `test_stress`.
+- A unidade de independência é `unit_id`: vídeo completo legado ou segmento
+  virtual não sobreposto. Todos os frames de uma unidade permanecem no mesmo
+  split.
+- Versões `standard` exigem treino, validação e teste normal; `robust` também
+  exige estresse; `pilot` permite apenas treino e permanece provisória.
 - A materialização ocorre em um diretório temporário. O diretório final só é substituído depois que todos os artefatos são concluídos.
 - `manifest.csv` registra hashes da imagem de origem, imagem materializada e label; `build_report.json` registra os hashes do manifesto e da configuração.
 - Antes do treinamento, a versão e o modelo inicial são fixados no registry por
