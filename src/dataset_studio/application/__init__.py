@@ -34,6 +34,7 @@ from dataset_studio.application.source_service import (
     source_status,
 )
 from dataset_studio.application.version_service import (
+    preview_combined_split_metrics,
     preview_split_metrics,
     release_status,
     training_recipe,
@@ -65,6 +66,7 @@ __all__ = [
     "inspect_finished_tasks",
     "list_available_models",
     "preview_split_metrics",
+    "preview_combined_split_metrics",
     "version_status",
     "release_status",
     "training_recipe",

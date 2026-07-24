@@ -542,3 +542,168 @@ def test_single_capture_unit_can_materialize_an_explicit_pilot(tmp_path: Path):
     assert report["evaluation_level"] == "pilot"
     assert report["provisional"] is True
     assert any("não comprovam generalização" in item for item in report["warnings"])
+
+
+def test_release_can_rename_merge_and_ignore_classes_across_sources(
+    tmp_path: Path,
+):
+    ws = Workspace.from_path(tmp_path)
+
+    def create_annotated_source(
+        source_id: str,
+        classes: list[str],
+        labels: list[str],
+    ) -> None:
+        videos = ws.videos_root / source_id
+        videos.mkdir(parents=True)
+        video_name = f"{source_id}.mp4"
+        (videos / video_name).write_bytes(b"video")
+        create_campaign(
+            ws,
+            campaign_id=source_id,
+            videos_dir=videos,
+            video_pattern="*.mp4",
+            annotation={"classes": classes},
+        )
+        frame_id = f"{source_id}_f000001"
+        image_name = f"{frame_id}.jpg"
+        images = ws.source_root(source_id) / "frames" / "raw" / "images"
+        (images / image_name).write_bytes(f"image-{source_id}".encode())
+        frame_manifest_path(ws, source_id).write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "frames": [
+                        {
+                            "frame_id": frame_id,
+                            "image": image_name,
+                            "source_video": video_name,
+                            "frame_index": 1,
+                            "width": 100,
+                            "height": 100,
+                            "predictions": [],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        results = [
+            {
+                "type": "rectanglelabels",
+                "value": {
+                    "x": 10 + index,
+                    "y": 10,
+                    "width": 20,
+                    "height": 20,
+                    "rotation": 0,
+                    "rectanglelabels": [label],
+                },
+            }
+            for index, label in enumerate(labels)
+        ]
+        export = tmp_path / f"{source_id}.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {
+                        "data": {"frame_id": frame_id},
+                        "annotations": [
+                            {"was_cancelled": False, "result": results}
+                        ],
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        accept_native_export(
+            ws,
+            source_id,
+            export,
+            revision_id="revision_01",
+        )
+
+    create_annotated_source(
+        "source_a",
+        ["Peixe", "bolha"],
+        ["Peixe", "bolha"],
+    )
+    create_annotated_source(
+        "source_b",
+        ["fish", "fish_large", "parasita"],
+        ["fish", "fish_large", "parasita"],
+    )
+    mapping = {
+        "source_a": {"Peixe": "peixe", "bolha": None},
+        "source_b": {
+            "fish": "peixe",
+            "fish_large": "peixe",
+            "parasita": "parasita",
+        },
+    }
+    assignments = {
+        "train": ["source_a/source_a.mp4", "source_b/source_b.mp4"],
+        "val": [],
+        "test_normal": [],
+        "test_stress": [],
+    }
+
+    with pytest.raises(WorkflowError, match="Confirme explicitamente"):
+        create_release(
+            ws,
+            release_id="mapping_without_confirmation",
+            campaign_ids=["source_a", "source_b"],
+            annotation_revisions={
+                "source_a": "revision_01",
+                "source_b": "revision_01",
+            },
+            assignments=assignments,
+            evaluation_level="pilot",
+            class_mapping=mapping,
+            final_classes=["peixe", "parasita"],
+        )
+
+    create_release(
+        ws,
+        release_id="mapped_release",
+        campaign_ids=["source_a", "source_b"],
+        annotation_revisions={
+            "source_a": "revision_01",
+            "source_b": "revision_01",
+        },
+        assignments=assignments,
+        evaluation_level="pilot",
+        class_mapping=mapping,
+        final_classes=["peixe", "parasita"],
+        class_mapping_acknowledged=True,
+    )
+    manifest = build_release(ws, "mapped_release")
+    release = manifest.parent
+    source_a_label = (
+        release / "labels" / "train" / "source_a__source_a_f000001.txt"
+    ).read_text(encoding="utf-8")
+    source_b_label = (
+        release / "labels" / "train" / "source_b__source_b_f000001.txt"
+    ).read_text(encoding="utf-8")
+    config = load_yaml(release / "version.yaml")
+    data = load_yaml(release / "data.yaml")
+    report = json.loads(
+        (release / "build_report.json").read_text(encoding="utf-8")
+    )
+
+    assert [line.split()[0] for line in source_a_label.splitlines()] == ["0"]
+    assert [line.split()[0] for line in source_b_label.splitlines()] == [
+        "0",
+        "0",
+        "1",
+    ]
+    assert data["names"] == {0: "peixe", 1: "parasita"}
+    assert config["class_resolution"]["ignored_boxes"] == 1
+    assert config["class_resolution"]["acknowledged"] is True
+    assert config["class_resolution"]["fused_classes"]["peixe"] == [
+        "Peixe",
+        "fish",
+        "fish_large",
+    ]
+    assert report["boxes"] == 4
+    assert report["class_resolution"]["affected_boxes"] == 4

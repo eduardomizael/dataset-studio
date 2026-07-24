@@ -45,6 +45,7 @@ from dataset_studio.application import (
     inspect_finished_tasks,
     label_studio_integration_status,
     list_available_models,
+    preview_combined_split_metrics,
     preview_split_metrics,
     promote_registered_model,
     registry_status,
@@ -177,6 +178,9 @@ class VersionCreateReq(BaseModel):
     assignments: dict[str, list[str]]
     annotation_revisions: dict[str, str] = Field(default_factory=dict)
     evaluation_level: Literal["pilot", "standard", "robust"] = "standard"
+    final_classes: list[str] | None = None
+    class_mapping: dict[str, dict[str, str | None]] | None = None
+    class_mapping_acknowledged: bool = False
 
     @property
     def target_id(self) -> str:
@@ -201,9 +205,14 @@ class SplitPreviewReq(BaseModel):
 
     source_id: str | None = None
     campaign_id: str | None = None
+    sources: list[str] | None = None
+    campaigns: list[str] | None = None
     assignments: dict[str, list[str]]
     revision_id: str | None = None
+    annotation_revisions: dict[str, str] = Field(default_factory=dict)
     evaluation_level: Literal["pilot", "standard", "robust"] = "standard"
+    final_classes: list[str] | None = None
+    class_mapping: dict[str, dict[str, str | None]] | None = None
 
 
 
@@ -1840,6 +1849,34 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 O modo piloto permite começar com uma única unidade, mas suas métricas não comprovam generalização.
                 O teste de estresse é opcional, salvo no modo robusto.
             </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="p-4 bg-slate-950/50 border border-slate-800 rounded-xl space-y-3">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-200">Origens da release</h3>
+                        <p class="text-[11px] text-slate-400 mt-1">Selecione uma ou mais origens imutáveis para compor este dataset.</p>
+                    </div>
+                    <div id="release-source-selector" class="space-y-2 text-xs">Carregando origens...</div>
+                </div>
+                <div class="p-4 bg-slate-950/50 border border-slate-800 rounded-xl space-y-3">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-200">Revisões utilizadas</h3>
+                        <p class="text-[11px] text-slate-400 mt-1">Cada origem contribui com exatamente uma revisão de anotação.</p>
+                    </div>
+                    <div id="release-revision-selector" class="space-y-2 text-xs">Selecione uma origem.</div>
+                </div>
+            </div>
+            <div id="class-mapping-panel" class="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-200">Compatibilidade das classes</h3>
+                    <p class="text-[11px] text-slate-400 mt-1">As origens permanecem inalteradas; qualquer conversão vale somente para esta release.</p>
+                </div>
+                <div id="class-mapping-content" class="text-xs text-slate-400">Selecione as origens e revisões.</div>
+                <div id="class-mapping-warnings" class="hidden p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-200"></div>
+                <label id="class-mapping-confirm-row" class="hidden items-start gap-2 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-xs text-rose-200 cursor-pointer">
+                    <input id="class-mapping-confirm" type="checkbox" onchange="updateSplitPreview()" class="mt-0.5">
+                    <span>Estou ciente de que renomear, fundir, omitir ou ignorar classes pode alterar a semântica do dataset e produzir resultados ruins.</span>
+                </label>
+            </div>
             <div id="split-quality-assessment" class="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-400">
                 Atribua as unidades para verificar suficiência de frames e anotações.
             </div>
@@ -2015,28 +2052,64 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
         }
 
-        let videoList = [];
-        let videoAssignments = {};
+        let selectedSources = [];
+        let sourceStates = {};
+        let revisionBySource = {};
+        let unitList = [];
+        let unitAssignments = {};
+        let classMapping = {};
+        let finalClasses = [];
+        let classSchemasDiffer = false;
+        let existingReleaseInfo = null;
+        let splitPreviewTimer = null;
+        let splitPreviewRequest = 0;
+
+        function currentAssignments() {
+            return {
+                train: unitList.filter(item => unitAssignments[item.key] === 'train').map(item => item.key),
+                val: unitList.filter(item => unitAssignments[item.key] === 'val').map(item => item.key),
+                test_normal: unitList.filter(item => unitAssignments[item.key] === 'test_normal').map(item => item.key),
+                test_stress: unitList.filter(item => unitAssignments[item.key] === 'test_stress').map(item => item.key)
+            };
+        }
+
+        function collectClassMapping() {
+            const mapping = {};
+            const orderedFinal = [];
+            selectedSources.forEach(sourceId => {
+                mapping[sourceId] = {};
+                const classes = sourceStates[sourceId]?.annotation?.classes || [];
+                classes.forEach(originalName => {
+                    const value = classMapping[sourceId]?.[originalName];
+                    const target = typeof value === 'string' ? value : originalName;
+                    mapping[sourceId][originalName] = target === '' ? null : target;
+                    if (target && !orderedFinal.includes(target)) orderedFinal.push(target);
+                });
+            });
+            finalClasses = orderedFinal;
+            return mapping;
+        }
 
         async function updateSplitPreview() {
-            if (!campaignId) return;
+            if (!selectedSources.length || selectedSources.some(id => !revisionBySource[id])) return;
+            const requestNumber = ++splitPreviewRequest;
             try {
+                const mapping = collectClassMapping();
                 const res = await fetch('/api/releases/preview-split', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        campaign_id: campaignId,
-                        revision_id: annotationRevisionId,
+                        sources: selectedSources,
+                        annotation_revisions: revisionBySource,
                         evaluation_level: document.getElementById('evaluation-level').value,
-                        assignments: {
-                            train: videoList.filter(v => videoAssignments[v] === 'train').map(v => campaignId + '/' + v),
-                            val: videoList.filter(v => videoAssignments[v] === 'val').map(v => campaignId + '/' + v),
-                            test_normal: videoList.filter(v => videoAssignments[v] === 'test_normal').map(v => campaignId + '/' + v),
-                            test_stress: videoList.filter(v => videoAssignments[v] === 'test_stress').map(v => campaignId + '/' + v)
-                        }
+                        assignments: currentAssignments(),
+                        class_mapping: mapping,
+                        final_classes: finalClasses
                     })
                 });
                 const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Não foi possível calcular a prévia.');
+                if (requestNumber !== splitPreviewRequest) return;
                 
                 document.getElementById('cnt-train-videos').innerText = `${data.train ? data.train.videos : 0} Unidade(s)`;
                 document.getElementById('cnt-train-frames').innerText = data.train ? data.train.frames : 0;
@@ -2067,23 +2140,39 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     qualityBox.className = 'p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300';
                     qualityBox.innerText = 'Os requisitos estruturais mínimos foram atendidos.';
                 }
+                renderClassWarnings(data.class_resolution || {});
             } catch (err) {
+                if (requestNumber !== splitPreviewRequest) return;
                 console.error(err);
+                const qualityBox = document.getElementById('split-quality-assessment');
+                qualityBox.className = 'p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300';
+                qualityBox.innerText = err.message;
             }
         }
 
-        function setVideoRole(vName, role) {
-            videoAssignments[vName] = role;
-            updateSplitPreview();
+        function scheduleSplitPreview() {
+            if (splitPreviewTimer) clearTimeout(splitPreviewTimer);
+            splitPreviewTimer = setTimeout(updateSplitPreview, 300);
+        }
+
+        function setVideoRole(unitKey, role) {
+            unitAssignments[unitKey] = role;
+            scheduleSplitPreview();
         }
 
         async function materializeRelease() {
             try {
+                if (!selectedSources.length) throw new Error('Selecione ao menos uma origem.');
+                if (selectedSources.some(id => !revisionBySource[id])) {
+                    throw new Error('Selecione uma revisão para cada origem.');
+                }
+                const mapping = collectClassMapping();
+                if (!finalClasses.length) throw new Error('Preserve ao menos uma classe final.');
+                const acknowledged = document.getElementById('class-mapping-confirm').checked;
+                if (classSchemasDiffer && !acknowledged) {
+                    throw new Error('Confirme os avisos de compatibilidade das classes.');
+                }
                 const targetRelId = document.getElementById('input-release-id').value.trim() || releaseId;
-                const trainV = videoList.filter(v => videoAssignments[v] === 'train').map(v => campaignId + '/' + v);
-                const valV = videoList.filter(v => videoAssignments[v] === 'val').map(v => campaignId + '/' + v);
-                const testNormalV = videoList.filter(v => videoAssignments[v] === 'test_normal').map(v => campaignId + '/' + v);
-                const testStressV = videoList.filter(v => videoAssignments[v] === 'test_stress').map(v => campaignId + '/' + v);
 
                 // Criar release
                 const resC = await fetch('/api/releases', {
@@ -2091,15 +2180,13 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         release_id: targetRelId,
-                        campaigns: [campaignId],
+                        sources: selectedSources,
                         evaluation_level: document.getElementById('evaluation-level').value,
-                        annotation_revisions: annotationRevisionId ? { [campaignId]: annotationRevisionId } : {},
-                        assignments: {
-                            train: trainV,
-                            val: valV,
-                            test_normal: testNormalV,
-                            test_stress: testStressV
-                        }
+                        annotation_revisions: revisionBySource,
+                        assignments: currentAssignments(),
+                        class_mapping: mapping,
+                        final_classes: finalClasses,
+                        class_mapping_acknowledged: acknowledged
                     })
                 });
                 const dataC = await resC.json();
@@ -2295,6 +2382,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             document.querySelectorAll('input[name^="role_"]').forEach(radio => {
                 radio.disabled = true;
             });
+            document.querySelectorAll('#release-source-selector input, #release-revision-selector select, #class-mapping-panel input, #evaluation-level').forEach(control => {
+                control.disabled = true;
+            });
         }
 
         function enableTrainingSection() {
@@ -2348,48 +2438,275 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
         }
 
+        function renderSourceSelector(allSources) {
+            const selected = new Set(selectedSources);
+            document.getElementById('release-source-selector').innerHTML = allSources.length
+                ? allSources.map(sourceId => `
+                    <label class="flex items-center justify-between gap-3 p-2.5 bg-slate-800/50 border border-slate-700/60 rounded-lg cursor-pointer">
+                        <span class="font-mono text-slate-200">${escapeHtml(sourceId)}</span>
+                        <input type="checkbox" ${selected.has(sourceId) ? 'checked' : ''} onchange="toggleReleaseSource(decodeURIComponent('${encodeURIComponent(sourceId)}'), this.checked)">
+                    </label>
+                `).join('')
+                : '<p class="text-amber-300">Nenhuma origem disponível.</p>';
+        }
+
+        async function toggleReleaseSource(sourceId, checked) {
+            if (checked && !selectedSources.includes(sourceId)) {
+                const res = await fetch(`/api/sources/${encodeURIComponent(sourceId)}`);
+                const state = await res.json();
+                if (!res.ok) {
+                    alert(state.detail || `Não foi possível carregar ${sourceId}.`);
+                    return;
+                }
+                if (!(state.annotation_revisions || []).length) {
+                    alert(`A origem ${sourceId} ainda não possui revisão de anotação.`);
+                    renderSourceSelector(await (await fetch('/api/sources')).json());
+                    return;
+                }
+                selectedSources.push(sourceId);
+                sourceStates[sourceId] = state;
+                revisionBySource[sourceId] = state.latest_annotation_revision;
+            } else if (!checked) {
+                selectedSources = selectedSources.filter(item => item !== sourceId);
+                delete sourceStates[sourceId];
+                delete revisionBySource[sourceId];
+                delete classMapping[sourceId];
+            }
+            await rebuildReleaseComposer(true);
+        }
+
+        function renderRevisionSelectors() {
+            const container = document.getElementById('release-revision-selector');
+            if (!selectedSources.length) {
+                container.innerHTML = '<p class="text-slate-500">Selecione uma origem.</p>';
+                return;
+            }
+            container.innerHTML = selectedSources.map(sourceId => {
+                const revisions = sourceStates[sourceId]?.annotation_revisions || [];
+                return `
+                    <div class="space-y-1">
+                        <label class="font-mono text-slate-300">${escapeHtml(sourceId)}</label>
+                        <select onchange="setReleaseRevision(decodeURIComponent('${encodeURIComponent(sourceId)}'), this.value)" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-white">
+                            ${revisions.map(revision => `<option value="${escapeHtml(revision.revision_id)}" ${revision.revision_id === revisionBySource[sourceId] ? 'selected' : ''}>${escapeHtml(revision.revision_id)} • ${revision.boxes || 0} caixas</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('release-revision-id').innerText =
+                selectedSources.map(id => `${id}: ${revisionBySource[id]}`).join(' • ');
+        }
+
+        async function setReleaseRevision(sourceId, revisionId) {
+            revisionBySource[sourceId] = revisionId;
+            await rebuildReleaseComposer(true);
+        }
+
+        function selectedRevision(sourceId) {
+            return (sourceStates[sourceId]?.annotation_revisions || []).find(
+                revision => revision.revision_id === revisionBySource[sourceId]
+            );
+        }
+
+        function mappingNeedsConfirmation() {
+            if (!selectedSources.length) return false;
+            const schemas = selectedSources.map(id => sourceStates[id]?.annotation?.classes || []);
+            const exact = schemas.every(schema => JSON.stringify(schema) === JSON.stringify(schemas[0]));
+            const mapping = collectClassMapping();
+            const identity = selectedSources.every(sourceId =>
+                (sourceStates[sourceId]?.annotation?.classes || []).every(
+                    name => mapping[sourceId]?.[name] === name
+                )
+            );
+            return !exact || !identity || JSON.stringify(finalClasses) !== JSON.stringify(schemas[0]);
+        }
+
+        function updateClassTarget(sourceId, originalName, value) {
+            classMapping[sourceId] = classMapping[sourceId] || {};
+            classMapping[sourceId][originalName] = value;
+            classSchemasDiffer = mappingNeedsConfirmation();
+            const confirmRow = document.getElementById('class-mapping-confirm-row');
+            confirmRow.classList.toggle('hidden', !classSchemasDiffer);
+            confirmRow.classList.toggle('flex', classSchemasDiffer);
+            if (!classSchemasDiffer) document.getElementById('class-mapping-confirm').checked = false;
+            scheduleSplitPreview();
+        }
+
+        function renderClassMapping() {
+            const content = document.getElementById('class-mapping-content');
+            if (!selectedSources.length) {
+                content.innerHTML = 'Selecione as origens e revisões.';
+                return;
+            }
+            let html = '<div class="overflow-x-auto"><table class="w-full text-left"><thead class="text-[10px] uppercase text-slate-500"><tr><th class="p-2">Origem</th><th class="p-2">Classe original</th><th class="p-2">Caixas</th><th class="p-2">Classe final</th></tr></thead><tbody class="divide-y divide-slate-800">';
+            selectedSources.forEach(sourceId => {
+                const revision = selectedRevision(sourceId);
+                const counts = revision?.class_counts || {};
+                const classes = sourceStates[sourceId]?.annotation?.classes || [];
+                classMapping[sourceId] = classMapping[sourceId] || {};
+                classes.forEach(originalName => {
+                    if (!(originalName in classMapping[sourceId])) {
+                        classMapping[sourceId][originalName] = originalName;
+                    }
+                    const target = classMapping[sourceId][originalName] ?? '';
+                    html += `
+                        <tr>
+                            <td class="p-2 font-mono text-slate-400">${escapeHtml(sourceId)}</td>
+                            <td class="p-2 font-mono text-purple-300">${escapeHtml(originalName)}</td>
+                            <td class="p-2 font-mono text-slate-300">${counts[originalName] || 0}</td>
+                            <td class="p-2">
+                                <input value="${escapeHtml(target)}" placeholder="vazio = ignorar" oninput="updateClassTarget(decodeURIComponent('${encodeURIComponent(sourceId)}'), decodeURIComponent('${encodeURIComponent(originalName)}'), this.value)" class="w-full min-w-40 bg-slate-800 border border-slate-700 rounded p-1.5 text-xs text-emerald-300 font-mono">
+                            </td>
+                        </tr>
+                    `;
+                });
+            });
+            html += '</tbody></table></div><p class="text-[11px] text-slate-500">Use o mesmo nome final para fundir classes. Deixe vazio para remover as caixas daquela classe somente nesta release.</p>';
+            content.innerHTML = html;
+            classSchemasDiffer = mappingNeedsConfirmation();
+            const confirmRow = document.getElementById('class-mapping-confirm-row');
+            confirmRow.classList.toggle('hidden', !classSchemasDiffer);
+            confirmRow.classList.toggle('flex', classSchemasDiffer);
+        }
+
+        function renderClassWarnings(resolution) {
+            const warnings = resolution.warnings || [];
+            const box = document.getElementById('class-mapping-warnings');
+            classSchemasDiffer = Boolean(resolution.requires_acknowledgement);
+            const confirmRow = document.getElementById('class-mapping-confirm-row');
+            confirmRow.classList.toggle('hidden', !classSchemasDiffer);
+            confirmRow.classList.toggle('flex', classSchemasDiffer);
+            if (!warnings.length) {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+                return;
+            }
+            box.classList.remove('hidden');
+            box.innerHTML = `<strong>Consequências desta conversão:</strong><br>${warnings.map(escapeHtml).join('<br>')}<br><span class="font-mono">${resolution.affected_boxes || 0} caixa(s) afetadas; ${resolution.ignored_boxes || 0} removidas.</span>`;
+        }
+
+        function renderUnitAssignments() {
+            const container = document.getElementById('video-assignment-list');
+            if (!unitList.length) {
+                container.innerHTML = '<p class="text-amber-400 text-xs py-2">Nenhuma unidade encontrada nas revisões selecionadas.</p>';
+                return;
+            }
+            container.innerHTML = unitList.map(item => {
+                const role = unitAssignments[item.key];
+                const encodedKey = encodeURIComponent(item.key);
+                return `
+                    <div class="p-3.5 bg-slate-800/40 border border-slate-800 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                        <div class="space-y-1">
+                            <div class="font-mono text-slate-200 font-bold">${escapeHtml(item.unitId)}</div>
+                            <div class="text-[10px] text-indigo-300">Origem: ${escapeHtml(item.sourceId)}</div>
+                            ${item.note ? `<div class="text-[11px] text-amber-300/90">📝 ${escapeHtml(item.note)}</div>` : '<div class="text-[11px] text-slate-500 italic">Sem observações</div>'}
+                        </div>
+                        <div class="flex flex-wrap gap-2.5">
+                            ${[
+                                ['train', 'Treino', 'indigo'],
+                                ['val', 'Validação', 'purple'],
+                                ['test_normal', 'Teste normal', 'amber'],
+                                ['test_stress', 'Teste estresse', 'rose']
+                            ].map(([value, label, color]) => `
+                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700">
+                                    <input type="radio" name="role_${encodedKey}" ${role === value ? 'checked' : ''} onchange="setVideoRole(decodeURIComponent('${encodedKey}'), '${value}')" class="text-${color}-600">
+                                    <span class="text-${color}-300 font-medium">${label}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function rebuildReleaseComposer(resetMapping = false) {
+            renderRevisionSelectors();
+            const storedAssignments = existingReleaseInfo?.assignments || {};
+            const storedRoles = {};
+            Object.entries(storedAssignments).forEach(([role, keys]) => {
+                (keys || []).forEach(key => { storedRoles[key] = role; });
+            });
+            const nextUnits = [];
+            selectedSources.forEach(sourceId => {
+                const state = sourceStates[sourceId];
+                const revision = selectedRevision(sourceId);
+                const notes = {};
+                (state?.capture_units || []).forEach(unit => {
+                    notes[unit.unit_id] = unit.note || unit.condition || '';
+                });
+                const unitIds = Object.keys(revision?.per_unit || revision?.per_video || {});
+                unitIds.forEach(unitId => {
+                    const key = `${sourceId}/${unitId}`;
+                    nextUnits.push({key, sourceId, unitId, note: notes[unitId] || ''});
+                });
+            });
+            unitList = nextUnits;
+            unitList.forEach(item => {
+                if (storedRoles[item.key]) {
+                    unitAssignments[item.key] = storedRoles[item.key];
+                } else if (!unitAssignments[item.key]) {
+                    const note = item.note.toLowerCase();
+                    unitAssignments[item.key] =
+                        note.includes('stress') || note.includes('estresse') ? 'test_stress' :
+                        note.includes('normal') ? 'test_normal' :
+                        note.includes('val') ? 'val' : 'train';
+                }
+            });
+            if (!existingReleaseInfo && unitList.length >= 3 && !unitList.some(item => unitAssignments[item.key] === 'val')) {
+                unitAssignments[unitList[unitList.length - 2].key] = 'val';
+                unitAssignments[unitList[unitList.length - 1].key] = 'test_normal';
+            }
+            if (resetMapping && !existingReleaseInfo) {
+                selectedSources.forEach(sourceId => {
+                    classMapping[sourceId] = classMapping[sourceId] || {};
+                });
+            }
+            renderUnitAssignments();
+            renderClassMapping();
+            await updateSplitPreview();
+            if (isReleaseMaterialized) lockReleaseConfiguration();
+        }
+
         async function initReleasePage() {
             document.getElementById('rel-title').innerText = releaseId || 'Release';
-            
             try {
-                // Tenta consultar as informações da release via API se ela já existir
-                let existingReleaseInfo = null;
                 if (releaseId) {
-                    try {
-                        const resV = await fetch(`/api/releases/${releaseId}`);
-                        if (resV.ok) {
-                            existingReleaseInfo = await resV.json();
-                        }
-                    } catch (e) {
-                        console.warn('Release ainda não criada:', e);
-                    }
+                    const resV = await fetch(`/api/releases/${releaseId}`);
+                    if (resV.ok) existingReleaseInfo = await resV.json();
                 }
-
-                // Se a release existir, extrai a campanha/origem vinculada a ela no arquivo de configuração
-                if (existingReleaseInfo && (existingReleaseInfo.sources || existingReleaseInfo.campaigns)) {
-                    const srcList = existingReleaseInfo.sources || existingReleaseInfo.campaigns;
-                    if (srcList.length > 0) {
-                        campaignId = srcList[0];
+                const allSources = await (await fetch('/api/sources')).json();
+                selectedSources = existingReleaseInfo
+                    ? [...(existingReleaseInfo.sources || existingReleaseInfo.campaigns || [])]
+                    : campaignId ? [campaignId]
+                    : allSources.length ? [allSources[0]]
+                    : [];
+                await Promise.all(selectedSources.map(async sourceId => {
+                    const res = await fetch(`/api/sources/${encodeURIComponent(sourceId)}`);
+                    if (!res.ok) throw new Error(`Falha ao carregar a origem ${sourceId}.`);
+                    sourceStates[sourceId] = await res.json();
+                }));
+                revisionBySource = existingReleaseInfo
+                    ? {...(existingReleaseInfo.annotation_revisions || {})}
+                    : {};
+                selectedSources.forEach((sourceId, index) => {
+                    if (!revisionBySource[sourceId]) {
+                        revisionBySource[sourceId] =
+                            index === 0 && annotationRevisionId
+                                ? annotationRevisionId
+                                : sourceStates[sourceId].latest_annotation_revision;
                     }
-                    const storedRevisions = existingReleaseInfo.annotation_revisions || {};
-                    if (storedRevisions[campaignId]) {
-                        annotationRevisionId = storedRevisions[campaignId];
-                    }
+                });
+                classMapping = existingReleaseInfo
+                    ? JSON.parse(JSON.stringify(existingReleaseInfo.class_mapping || {}))
+                    : {};
+                if (existingReleaseInfo?.class_resolution?.acknowledged) {
+                    document.getElementById('class-mapping-confirm').checked = true;
                 }
-
-                // Se a URL não tiver campaignId nem conseguir derivar, busca a primeira campanha disponível
-                if (!campaignId) {
-                    const resC = await fetch('/api/campaigns');
-                    const campaigns = await resC.json();
-                    if (campaigns && campaigns.length > 0) {
-                        campaignId = campaigns[0];
-                    }
+                renderSourceSelector(allSources);
+                document.getElementById('input-release-id').value =
+                    releaseId || (selectedSources.length ? `release_${selectedSources[0]}` : 'release_01');
+                if (existingReleaseInfo?.evaluation_level) {
+                    document.getElementById('evaluation-level').value = existingReleaseInfo.evaluation_level;
                 }
-
-                const inputRelId = document.getElementById('input-release-id');
-                if (inputRelId) inputRelId.value = releaseId || (campaignId ? `release_${campaignId}` : 'release_01');
-
-                // Verificar se a release já foi materializada previamente (manifesto ou flag materialized)
                 if (existingReleaseInfo && (existingReleaseInfo.materialized || existingReleaseInfo.build_report)) {
                     isReleaseMaterialized = true;
                     document.getElementById('rel-status-badge').innerText = 'Status: Materializada';
@@ -2397,145 +2714,21 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 } else {
                     disableTrainingSection();
                 }
+                await rebuildReleaseComposer(false);
 
-                if (!campaignId) {
-                    document.getElementById('video-assignment-list').innerHTML = '<p class="text-rose-400 text-xs py-2">Identificador da origem/campanha não encontrado na URL.</p>';
-                    return;
-                }
-
-                const resSt = await fetch(`/api/campaigns/${campaignId}`);
-                if (!resSt.ok) {
-                    throw new Error(`Falha ao carregar dados da origem: ${resSt.statusText}`);
-                }
-                const st = await resSt.json();
-                if (!annotationRevisionId) {
-                    annotationRevisionId = st.latest_annotation_revision || null;
-                }
-                const revision = (st.annotation_revisions || []).find(
-                    item => item.revision_id === annotationRevisionId
-                );
-                if (!annotationRevisionId || !revision) {
-                    throw new Error('A revisão de anotação selecionada não existe nesta origem.');
-                }
-                const report = revision;
-                document.getElementById('release-revision-id').innerText = annotationRevisionId;
-                const videoDetails = st.video_details || [];
-                const notesMap = {};
-                videoDetails.forEach(v => {
-                    notesMap[v.name] = v.note || '';
-                });
-                (st.capture_units || []).forEach(unit => {
-                    notesMap[unit.unit_id] = unit.note || unit.condition || '';
-                });
-
-                videoList = Object.keys(report.per_unit || report.per_video || {});
-                if (videoList.length === 0 && (st.capture_units || []).length > 0) {
-                    videoList = st.capture_units.map(unit => unit.unit_id);
-                }
-
-                if (videoList.length === 0) {
-                    document.getElementById('video-assignment-list').innerHTML = '<p class="text-amber-400 text-xs py-2">Nenhum vídeo encontrado para esta origem.</p>';
-                    return;
-                }
-
-                // Atribuir por padrão com base na nota da unidade.
-                // Para releases existentes, preservar exatamente a configuração registrada.
-                const storedAssignments = existingReleaseInfo ? (existingReleaseInfo.assignments || {}) : {};
-                if (existingReleaseInfo && existingReleaseInfo.evaluation_level) {
-                    document.getElementById('evaluation-level').value =
-                        existingReleaseInfo.evaluation_level;
-                }
-                const storedRoleByVideo = {};
-                Object.entries(storedAssignments).forEach(([role, items]) => {
-                    (items || []).forEach(item => {
-                        const prefix = `${campaignId}/`;
-                        const videoName = item.startsWith(prefix) ? item.slice(prefix.length) : item;
-                        storedRoleByVideo[videoName] = role;
-                    });
-                });
-                videoList.forEach((v, idx) => {
-                    if (storedRoleByVideo[v]) {
-                        videoAssignments[v] = storedRoleByVideo[v];
-                        return;
-                    }
-                    const noteStr = (notesMap[v] || '').toLowerCase().trim();
-                    if (noteStr.includes('estresse') || noteStr.includes('stress')) {
-                        videoAssignments[v] = 'test_stress';
-                    } else if (noteStr.includes('normal')) {
-                        videoAssignments[v] = 'test_normal';
-                    } else if (noteStr.includes('validação') || noteStr.includes('validacao') || noteStr.includes('val')) {
-                        videoAssignments[v] = 'val';
-                    } else if (noteStr.includes('treino') || noteStr.includes('train')) {
-                        videoAssignments[v] = 'train';
-                    } else if (videoList.length >= 3 && idx === videoList.length - 1) {
-                        videoAssignments[v] = 'test_normal';
-                    } else if (videoList.length >= 2 && idx === videoList.length - 2) {
-                        videoAssignments[v] = 'val';
-                    } else {
-                        videoAssignments[v] = 'train';
-                    }
-                });
-                if (videoList.length === 1 && !notesMap[videoList[0]]) videoAssignments[videoList[0]] = 'train';
-
-                // Renderizar tabela
-                let html = '';
-                videoList.forEach(v => {
-                    const role = videoAssignments[v];
-                    const note = notesMap[v] || '';
-                    html += `
-                        <div class="p-3.5 bg-slate-800/40 border border-slate-800 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-                            <div class="space-y-1">
-                                <div class="font-mono text-slate-200 font-bold">${escapeHtml(v)}</div>
-                                <div class="text-[10px] text-slate-500">Unidade experimental</div>
-                                ${note ? `<div class="text-[11px] text-amber-300/90 flex items-center gap-1 font-sans"><span>📝</span> <span>${escapeHtml(note)}</span></div>` : '<div class="text-[11px] text-slate-500 font-sans italic">Sem observações</div>'}
-                            </div>
-                            <div class="flex flex-wrap gap-2.5">
-                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-indigo-500/50">
-                                    <input type="radio" name="role_${v}" value="train" ${role==='train'?'checked':''} onchange="setVideoRole('${v}', 'train')" class="text-indigo-600">
-                                    <span class="text-indigo-300 font-medium">Treino (Train)</span>
-                                </label>
-                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-purple-500/50">
-                                    <input type="radio" name="role_${v}" value="val" ${role==='val'?'checked':''} onchange="setVideoRole('${v}', 'val')" class="text-purple-600">
-                                    <span class="text-purple-300 font-medium">Validação (Val)</span>
-                                </label>
-                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-amber-500/50">
-                                    <input type="radio" name="role_${v}" value="test_normal" ${role==='test_normal'?'checked':''} onchange="setVideoRole('${v}', 'test_normal')" class="text-amber-600">
-                                    <span class="text-amber-300 font-medium">Teste Normal</span>
-                                </label>
-                                <label class="flex items-center gap-1 cursor-pointer bg-slate-800 px-2.5 py-1 rounded border border-slate-700 hover:border-rose-500/50">
-                                    <input type="radio" name="role_${v}" value="test_stress" ${role==='test_stress'?'checked':''} onchange="setVideoRole('${v}', 'test_stress')" class="text-rose-600">
-                                    <span class="text-rose-300 font-medium">Teste Estresse</span>
-                                </label>
-                            </div>
-                        </div>
-                    `;
-                });
-                document.getElementById('video-assignment-list').innerHTML = html;
-                updateSplitPreview();
-
-                if (isReleaseMaterialized) {
-                    lockReleaseConfiguration();
-                }
-
-                // Carregar Modelos em models/
-                const resM = await fetch('/api/models');
-                const models = await resM.json();
+                const models = await (await fetch('/api/models')).json();
                 const sel = document.getElementById('train-model-select');
-                if (models.length > 0) {
-                    models.forEach(m => {
-                        const opt = document.createElement('option');
-                        opt.value = m;
-                        opt.innerText = `${m} (Modelo em models/)`;
-                        sel.appendChild(opt);
-                    });
-                }
-
-                // Carregar Fila de Treinamentos
+                models.forEach(model => {
+                    const opt = document.createElement('option');
+                    opt.value = model;
+                    opt.innerText = `${model} (Modelo em models/)`;
+                    sel.appendChild(opt);
+                });
                 loadReleaseJobs();
-
             } catch (err) {
                 console.error(err);
-                document.getElementById('video-assignment-list').innerHTML = `<p class="text-rose-400 text-xs py-2">Erro ao carregar vídeos: ${escapeHtml(err.message)}</p>`;
+                document.getElementById('video-assignment-list').innerHTML =
+                    `<p class="text-rose-400 text-xs py-2">Erro ao montar release: ${escapeHtml(err.message)}</p>`;
             }
         }
 
@@ -3613,6 +3806,24 @@ def create_web_app(workspace: Workspace) -> FastAPI:
     @app.post("/api/releases/preview-split")
     def api_preview_split(req: SplitPreviewReq):
         try:
+            source_ids = req.sources or req.campaigns
+            if source_ids:
+                revision_ids = dict(req.annotation_revisions)
+                if (
+                    len(source_ids) == 1
+                    and not revision_ids
+                    and req.revision_id
+                ):
+                    revision_ids[source_ids[0]] = req.revision_id
+                return preview_combined_split_metrics(
+                    workspace,
+                    source_ids,
+                    req.assignments,
+                    revision_ids,
+                    evaluation_level=req.evaluation_level,
+                    class_mapping=req.class_mapping,
+                    final_classes=req.final_classes,
+                )
             src_id = req.source_id or req.campaign_id
             if not src_id:
                 raise HTTPException(status_code=400, detail="Identificador da origem obrigatório.")
@@ -3637,6 +3848,9 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 assignments=req.assignments,
                 annotation_revisions=req.annotation_revisions or None,
                 evaluation_level=req.evaluation_level,
+                class_mapping=req.class_mapping,
+                final_classes=req.final_classes,
+                class_mapping_acknowledged=req.class_mapping_acknowledged,
             )
             return {"status": "ok", "path": str(path)}
         except WorkflowError as exc:

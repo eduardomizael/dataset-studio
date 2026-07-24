@@ -203,11 +203,9 @@ def test_release_page_preserves_selected_annotation_revision(tmp_path: Path):
     assert "&revision_id=${encodeURIComponent(revisionId)}" in source_page.text
     assert release_page.status_code == 200
     assert "let annotationRevisionId = urlParams.get('revision_id')" in release_page.text
-    assert "revision_id: annotationRevisionId" in release_page.text
-    assert (
-        "annotation_revisions: annotationRevisionId ? { [campaignId]: annotationRevisionId } : {}"
-        in release_page.text
-    )
+    assert "annotation_revisions: revisionBySource" in release_page.text
+    assert "index === 0 && annotationRevisionId" in release_page.text
+    assert "sources: selectedSources" in release_page.text
 
 
 def test_source_page_exposes_extraction_progress_and_polling(tmp_path: Path):

@@ -117,6 +117,7 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
                 "positive_frames": revision_report.get("positive_frames", 0),
                 "confirmed_negatives": revision_report.get("confirmed_negatives", 0),
                 "boxes": revision_report.get("boxes", 0),
+                "class_counts": revision_report.get("class_counts", {}),
                 "per_video": revision_report.get("per_video", {}),
                 "per_unit": revision_report.get(
                     "per_unit", revision_report.get("per_video", {})

@@ -92,6 +92,24 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     vc.add_argument("--sources", "--campaigns", dest="sources", nargs="+", required=True, help="Origens a incluir")
     vc.add_argument("--assignments-json", required=True, help="JSON de atribuição de vídeos aos splits")
     vc.add_argument(
+        "--annotation-revisions-json",
+        help="JSON com uma revisão por origem",
+    )
+    vc.add_argument(
+        "--class-mapping-json",
+        help="JSON origem -> classe original -> classe final ou null",
+    )
+    vc.add_argument(
+        "--final-classes",
+        nargs="+",
+        help="Lista ordenada de classes finais",
+    )
+    vc.add_argument(
+        "--acknowledge-class-mapping",
+        action="store_true",
+        help="Confirma avisos de renomeação, fusão, ausência ou descarte",
+    )
+    vc.add_argument(
         "--evaluation-level",
         choices=("pilot", "standard", "robust"),
         default="standard",
@@ -210,12 +228,26 @@ def main(args: list[str] | None = None) -> int:
     elif parsed.command in {"version", "release"}:
         if parsed.subcommand == "create":
             assignments = json.loads(parsed.assignments_json)
+            annotation_revisions = (
+                json.loads(parsed.annotation_revisions_json)
+                if parsed.annotation_revisions_json
+                else None
+            )
+            class_mapping = (
+                json.loads(parsed.class_mapping_json)
+                if parsed.class_mapping_json
+                else None
+            )
             path = create_version(
                 ws,
                 version_id=parsed.id,
                 source_ids=parsed.sources,
                 assignments=assignments,
                 evaluation_level=parsed.evaluation_level,
+                annotation_revisions=annotation_revisions,
+                class_mapping=class_mapping,
+                final_classes=parsed.final_classes,
+                class_mapping_acknowledged=parsed.acknowledge_class_mapping,
             )
             print(f"[OK] Versão configurada em: {path}")
         elif parsed.subcommand == "build":

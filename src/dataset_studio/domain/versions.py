@@ -155,6 +155,172 @@ def assess_split_sufficiency(
     }
 
 
+def resolve_class_mapping(
+    source_classes: dict[str, list[str]],
+    source_class_counts: dict[str, dict[str, int]],
+    *,
+    class_mapping: dict[str, dict[str, str | None]] | None = None,
+    final_classes: list[str] | None = None,
+    acknowledged: bool = False,
+) -> dict[str, Any]:
+    """Valida e descreve a transformação de classes de uma release."""
+    if not source_classes:
+        raise WorkflowError("Nenhuma origem foi informada para o mapeamento de classes.")
+
+    schemas = list(source_classes.values())
+    exact_match = all(schema == schemas[0] for schema in schemas[1:])
+    if class_mapping is None:
+        if not exact_match:
+            raise WorkflowError(
+                "As origens possuem classes diferentes. Defina e confirme o "
+                "mapeamento de classes da release."
+            )
+        final = list(schemas[0])
+        mapping = {
+            source_id: {class_name: class_name for class_name in classes}
+            for source_id, classes in source_classes.items()
+        }
+    else:
+        if set(class_mapping) != set(source_classes):
+            raise WorkflowError(
+                "class_mapping deve indicar exatamente um mapeamento por origem."
+            )
+        mapping: dict[str, dict[str, str | None]] = {}
+        for source_id, classes in source_classes.items():
+            raw_mapping = class_mapping[source_id]
+            if set(raw_mapping) != set(classes):
+                raise WorkflowError(
+                    f"O mapeamento de {source_id} deve definir uma ação para "
+                    "cada classe original."
+                )
+            normalized: dict[str, str | None] = {}
+            for original_name in classes:
+                target = raw_mapping[original_name]
+                if target is None:
+                    normalized[original_name] = None
+                    continue
+                if not isinstance(target, str) or not target:
+                    raise WorkflowError(
+                        f"Destino inválido para {source_id}/{original_name}."
+                    )
+                if target != target.strip():
+                    raise WorkflowError(
+                        f"A classe final '{target}' possui espaços nas extremidades."
+                    )
+                normalized[original_name] = target
+            mapping[source_id] = normalized
+
+        if final_classes is None:
+            final = []
+            for source_id in source_classes:
+                for original_name in source_classes[source_id]:
+                    target = mapping[source_id][original_name]
+                    if target is not None and target not in final:
+                        final.append(target)
+        else:
+            final = list(final_classes)
+
+    if not final:
+        raise WorkflowError("A release deve preservar ao menos uma classe final.")
+    if any(not isinstance(name, str) or not name or name != name.strip() for name in final):
+        raise WorkflowError("As classes finais devem possuir nomes não vazios e sem espaços externos.")
+    if len(final) != len(set(final)):
+        raise WorkflowError("A lista de classes finais possui nomes duplicados.")
+
+    used_targets = {
+        target
+        for source_mapping in mapping.values()
+        for target in source_mapping.values()
+        if target is not None
+    }
+    unknown_targets = sorted(used_targets - set(final))
+    unused_targets = sorted(set(final) - used_targets)
+    if unknown_targets:
+        raise WorkflowError(
+            "Classes de destino ausentes em final_classes: "
+            + ", ".join(unknown_targets)
+        )
+    if unused_targets:
+        raise WorkflowError(
+            "Classes finais sem nenhuma classe de origem associada: "
+            + ", ".join(unused_targets)
+        )
+
+    warnings: list[str] = []
+    renamed_boxes = 0
+    ignored_boxes = 0
+    affected_boxes = 0
+    target_origins: dict[str, set[str]] = {name: set() for name in final}
+    for source_id, classes in source_classes.items():
+        targets_in_source: set[str] = set()
+        for original_name in classes:
+            target = mapping[source_id][original_name]
+            boxes = int((source_class_counts.get(source_id) or {}).get(original_name, 0))
+            if target is None:
+                ignored_boxes += boxes
+                affected_boxes += boxes
+                warnings.append(
+                    f"{source_id}: a classe '{original_name}' será ignorada "
+                    f"e {boxes} caixa(s) serão removidas."
+                )
+                continue
+            targets_in_source.add(target)
+            target_origins[target].add(original_name)
+            if target != original_name:
+                renamed_boxes += boxes
+                affected_boxes += boxes
+                warnings.append(
+                    f"{source_id}: '{original_name}' será convertida para "
+                    f"'{target}' em {boxes} caixa(s)."
+                )
+        missing = [name for name in final if name not in targets_in_source]
+        if missing:
+            warnings.append(
+                f"{source_id}: não possui classes associadas a "
+                + ", ".join(f"'{name}'" for name in missing)
+                + "; confirme que não são objetos presentes sem anotação."
+            )
+        ordered_targets = [
+            mapping[source_id][name]
+            for name in classes
+            if mapping[source_id][name] is not None
+        ]
+        if ordered_targets != [name for name in final if name in ordered_targets]:
+            warnings.append(
+                f"{source_id}: a ordem dos IDs será remapeada para o esquema final."
+            )
+
+    fused_classes: dict[str, list[str]] = {}
+    for target, originals in target_origins.items():
+        if len(originals) > 1:
+            fused_classes[target] = sorted(originals)
+            warnings.append(
+                f"As classes {', '.join(repr(name) for name in sorted(originals))} "
+                f"serão fundidas em '{target}'."
+            )
+
+    requires_acknowledgement = not exact_match or bool(warnings)
+    if requires_acknowledgement and not acknowledged:
+        raise WorkflowError(
+            "O mapeamento altera ou combina esquemas de classes. "
+            "Confirme explicitamente os avisos antes de criar a release."
+        )
+
+    return {
+        "original_classes": source_classes,
+        "final_classes": final,
+        "mapping": mapping,
+        "warnings": warnings,
+        "requires_acknowledgement": requires_acknowledgement,
+        "acknowledged": bool(acknowledged),
+        "acknowledged_at": utc_now() if acknowledged else None,
+        "affected_boxes": affected_boxes,
+        "renamed_boxes": renamed_boxes,
+        "ignored_boxes": ignored_boxes,
+        "fused_classes": fused_classes,
+    }
+
+
 
 def create_version(
     defaults_or_ws: dict[str, Any] | Workspace,
@@ -166,6 +332,9 @@ def create_version(
     assignments: dict[str, list[str]],
     annotation_revisions: dict[str, str] | None = None,
     evaluation_level: str = "standard",
+    class_mapping: dict[str, dict[str, str | None]] | None = None,
+    final_classes: list[str] | None = None,
+    class_mapping_acknowledged: bool = False,
 ) -> Path:
     """Cria o manifesto inicial de configuração para uma nova versão de dataset."""
     target_id = version_id or release_id
@@ -188,16 +357,14 @@ def create_version(
         raise WorkflowError(f"A versao ja existe: {root}")
 
     expected: set[str] = set()
-    first_source = load_source(defaults_or_ws, targets[0])
-    defaults_classes = list(first_source["annotation"]["classes"])
-
     selected_revisions: dict[str, str] = {}
     unit_metrics: dict[str, dict[str, Any]] = {}
+    source_classes: dict[str, list[str]] = {}
+    source_class_counts: dict[str, dict[str, int]] = {}
     provisional = False
     for src_id in targets:
         source = load_source(defaults_or_ws, src_id)
-        if list(source["annotation"]["classes"]) != defaults_classes:
-            raise WorkflowError(f"Classes divergentes na origem: {src_id}")
+        source_classes[src_id] = list(source["annotation"]["classes"])
 
         revs = list_annotation_revisions(defaults_or_ws, src_id)
         if annotation_revisions is not None and annotation_revisions.get(src_id):
@@ -213,12 +380,24 @@ def create_version(
             )
         report = load_annotation_revision_report(defaults_or_ws, src_id, revision_id)
         selected_revisions[src_id] = revision_id
+        source_class_counts[src_id] = {
+            str(name): int(count)
+            for name, count in (report.get("class_counts") or {}).items()
+        }
         provisional = provisional or report.get("snapshot_type") == "provisional"
         expected.update(source_video_keys(defaults_or_ws, src_id))
         for unit_id, metrics in (
             report.get("per_unit") or report.get("per_video") or {}
         ).items():
             unit_metrics[f"{src_id}/{unit_id}"] = metrics
+
+    class_resolution = resolve_class_mapping(
+        source_classes,
+        source_class_counts,
+        class_mapping=class_mapping,
+        final_classes=final_classes,
+        acknowledged=class_mapping_acknowledged,
+    )
 
     assigned = [key for split in SPLITS for key in assignments.get(split, [])]
     if len(assigned) != len(set(assigned)):
@@ -279,9 +458,11 @@ def create_version(
         "provisional": provisional,
         "evaluation_level": effective_level,
         "quality_assessment": quality_assessment,
+        "class_resolution": class_resolution,
+        "class_mapping": class_resolution["mapping"],
         "assignments": {split: assignments.get(split, []) for split in SPLITS},
         "materialization": "copy",
-        "classes": defaults_classes,
+        "classes": class_resolution["final_classes"],
     }
     path = root / "version.yaml"
     dump_yaml(path, payload)
@@ -307,7 +488,15 @@ def _materialize_version(
     rows: list[dict[str, str]] = []
     operations: list[tuple[Path, Path, str]] = []
     sources_list = version.get("sources") or version.get("campaigns", [])
+    final_class_ids = {
+        class_name: index for index, class_name in enumerate(version["classes"])
+    }
     for src_id in sources_list:
+        source = load_source(defaults_or_ws, src_id)
+        original_classes = list(source["annotation"]["classes"])
+        source_mapping = (version.get("class_mapping") or {}).get(src_id) or {
+            class_name: class_name for class_name in original_classes
+        }
         manifest = load_frame_manifest(defaults_or_ws, src_id)
         revision_id = version.get("annotation_revisions", {}).get(src_id, "legacy")
         export_path, _ = annotation_source_paths(defaults_or_ws, src_id, revision_id)
@@ -357,7 +546,31 @@ def _materialize_version(
             output_stem = f"{src_id}__{frame_id}"
             destination_image = root / "images" / split / f"{output_stem}.jpg"
             destination_label = root / "labels" / split / f"{output_stem}.txt"
-            label_text = "\n".join(annotation.boxes)
+            remapped_boxes: list[str] = []
+            for box in annotation.boxes:
+                parts = box.split()
+                if len(parts) != 5:
+                    raise WorkflowError(
+                        f"Anotação YOLO inválida em {src_id}/{frame_id}."
+                    )
+                original_id = int(parts[0])
+                if original_id < 0 or original_id >= len(original_classes):
+                    raise WorkflowError(
+                        f"ID de classe inválido em {src_id}/{frame_id}: "
+                        f"{original_id}."
+                    )
+                original_name = original_classes[original_id]
+                target_name = source_mapping.get(original_name)
+                if target_name is None:
+                    continue
+                if target_name not in final_class_ids:
+                    raise WorkflowError(
+                        f"Classe final desconhecida no mapeamento: {target_name}."
+                    )
+                remapped_boxes.append(
+                    " ".join([str(final_class_ids[target_name]), *parts[1:]])
+                )
+            label_text = "\n".join(remapped_boxes)
             if label_text:
                 label_text += "\n"
             operations.append((source_image, destination_image, label_text))
@@ -380,7 +593,7 @@ def _materialize_version(
                     "exclusion_reason": "",
                     "image": destination_image.relative_to(root).as_posix(),
                     "label": destination_label.relative_to(root).as_posix(),
-                    "boxes": str(len(annotation.boxes)),
+                    "boxes": str(len(remapped_boxes)),
                     "source_image_sha256": sha256(source_image),
                     "image_sha256": sha256(source_image),
                     "label_sha256": hashlib.sha256(label_text.encode("utf-8")).hexdigest(),
@@ -443,9 +656,11 @@ def _materialize_version(
         "provisional": bool(version.get("provisional", False)),
         "evaluation_level": version.get("evaluation_level", "legacy"),
         "quality_assessment": version.get("quality_assessment", {}),
+        "class_resolution": version.get("class_resolution", {}),
         "warnings": list(
             (version.get("quality_assessment") or {}).get("warnings") or []
         )
+        + list((version.get("class_resolution") or {}).get("warnings") or [])
         + (
             [
                 "Versão piloto: a validação reutiliza o split de treino e não "
