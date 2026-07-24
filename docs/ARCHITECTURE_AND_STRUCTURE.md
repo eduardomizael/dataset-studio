@@ -164,7 +164,8 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
    - `train.log`, `results.csv`, `args.yaml`, gráficos e `weights/best.pt`.
    - `run.yaml`: Manifest consolidado do treinamento.
    - `evaluations/summary.json`: Métricas finais de `test_normal`,
-     `test_stress` e queda de robustez.
+     `test_stress` e comparação de robustez. A interface apresenta a variação
+     como `estresse - normal`.
    - `provenance/`: Snapshot da versão consumida pelo treinamento.
 
 7. **`registry/`**:

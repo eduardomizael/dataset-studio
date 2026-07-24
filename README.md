@@ -31,7 +31,7 @@ A aplicação iniciará o servidor local e abrirá automaticamente o navegador n
 5. A materialização publica o dataset em `dataset/versions/<version_id>/`.
 6. A mesma versão materializada pode alimentar múltiplos treinamentos em `runs/detect/<training_id>/`.
 7. Cada treinamento avalia automaticamente o `best.pt` em `test_normal` e
-   `test_stress` e registra a queda de robustez.
+   `test_stress` e apresenta a variação das métricas (`estresse - normal`).
 
 A integração com o Label Studio exige um token somente na primeira utilização do computador. Depois disso, o Dataset Studio cria ou reconhece o projeto de cada origem, importa tarefas sem duplicação e configura automaticamente a fila e as preanotações.
 

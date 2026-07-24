@@ -130,7 +130,10 @@ Ao terminar, consolida:
 - relação com o modelo-pai;
 - modelo resultante e seus aliases.
 - avaliações independentes do `best.pt` em `test_normal` e `test_stress`;
-- queda absoluta e relativa das métricas sob estresse.
+- comparação absoluta e relativa das métricas sob estresse. Por
+  retrocompatibilidade, o registry persiste campos `drop_*` calculados como
+  `normal - estresse`; a interface os apresenta como variação
+  `estresse - normal`.
 
 O teste de estresse ocorre somente depois do treino e nunca seleciona época ou
 checkpoint. Falha em uma avaliação é registrada sem apagar um treinamento que

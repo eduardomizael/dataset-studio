@@ -19,13 +19,18 @@ A aplicação abrirá automaticamente no endereço: `http://127.0.0.1:8000/`.
 
 ## 2. Tela Inicial (Dashboard)
 
-A tela inicial exibe um painel dividido em 3 colunas principais:
+A tela inicial exibe três seções de catálogo em largura total:
 
-1. **📁 Origens**: Conjuntos fixos de vídeos, configurações e tarefas de anotação.
-2. **📦 Versões**: Datasets configurados ou materializados.
-3. **⚡ Treinamentos**: Lista de treinamentos executados ou em andamento na pasta `runs/detect/`.
+1. **📁 Origens**: vídeos, unidades, frames, tarefas, classes e a revisão mais
+   recente.
+2. **📦 Versões**: estado de materialização, nível de avaliação, origens,
+   revisões, imagens, caixas e distribuição dos splits.
+3. **⚡ Treinamentos**: estado, dataset, modelo base, épocas, resolução, melhor
+   mAP50-95 e modelo resultante.
 
-No canto superior direito, há o botão **`+ Nova Origem de Dados`** e a indicação da pasta raiz do **Workspace**.
+O nome legível aparece em destaque e o ID técnico permanece logo abaixo, sem
+ser truncado. No topo, há o botão **`+ Nova Origem de Dados`** e a indicação da
+pasta raiz do **Workspace**.
 
 ---
 
@@ -174,8 +179,9 @@ Na tela da versão materializada:
    - O registry consolida automaticamente o dataset, modelo inicial, modelo-pai,
      hashes, melhor época e checkpoint resultante.
    - O `best.pt` é avaliado automaticamente nos testes normal e de estresse.
-     O relatório compara precisão, recall, mAP50 e mAP50-95 e mostra a queda
-     sob estresse. Splits ausentes são informados como não disponíveis.
+     O relatório compara precisão, recall, mAP50 e mAP50-95 e mostra a variação
+     `estresse - normal`: valores positivos indicam melhora e valores negativos,
+     redução. Splits ausentes são informados como não disponíveis.
    - Pesos promovidos podem continuar com nomes amigáveis, mas sua identidade é
      o `model_id` associado ao SHA-256.
    - Ao promover pela interface, a ferramenta também cria automaticamente
