@@ -181,10 +181,15 @@ def test_web_app_endpoints(tmp_path: Path, monkeypatch):
     assert "size_human" in st_data["video_details"][0]
     assert "resolution" in st_data["video_details"][0]
     assert "fps" in st_data["video_details"][0]
+    assert st_data["classes"] == ["peixe"]
+    assert st_data["created_at"]
 
     index = client.get("/")
     assert index.status_code == 200
     assert "Dataset Studio" in index.text
+    assert "Origens combinadas" in index.text
+    assert "Modelo resultante" in index.text
+    assert "break-all" in index.text
     settings = client.get("/api/label-studio/settings")
     assert settings.status_code == 200
     assert settings.json()["configured"] is False
@@ -217,6 +222,18 @@ def test_source_page_exposes_extraction_progress_and_polling(tmp_path: Path):
     assert 'id="extraction-progress-bar"' in page.text
     assert "/extract/status" in page.text
     assert "Extração em andamento" in page.text
+
+
+def test_training_page_presents_signed_stress_variation(tmp_path: Path):
+    ws = Workspace.from_path(tmp_path)
+    page = TestClient(create_web_app(ws)).get("/training.html")
+
+    assert page.status_code == 200
+    assert ">Variação</th>" in page.text
+    assert "Teste de estresse menos teste normal" in page.text
+    assert "const variation = typeof drop === 'number' ? -drop : null" in page.text
+    assert "formatSignedPercent(variation)" in page.text
+    assert ">Queda</th>" not in page.text
 
 
 def test_completed_steps_locking(tmp_path: Path):

@@ -175,6 +175,8 @@ def source_status(ws: Workspace, source_id: str) -> dict[str, Any]:
             else None
         ),
         "annotation_backend": annotation_backend,
+        "classes": annotation.get("classes", []),
+        "created_at": source.get("created_at"),
         "annotation_model": annotation.get("model"),
         "annotation_detection_config": annotation.get("detection_config"),
         "extraction": source.get("extraction", {}),

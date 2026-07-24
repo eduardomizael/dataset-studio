@@ -360,53 +360,56 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                 <h1 class="text-3xl font-extrabold tracking-tight text-indigo-400">Dataset Studio</h1>
                 <p class="text-slate-400 text-sm mt-1">Gerenciamento autônomo de Origens de dados, Versões e Treinamentos YOLO</p>
             </div>
-            <div class="flex items-center gap-3">
-                <button onclick="openCreateCampaignModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-lg shadow-lg shadow-indigo-600/30 transition">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto">
+                <button onclick="openCreateCampaignModal()" class="w-full sm:w-auto whitespace-nowrap px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-lg shadow-lg shadow-indigo-600/30 transition">
                     + Nova Origem de Dados
                 </button>
-                <span class="px-3 py-1.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-lg text-xs font-mono">
+                <span class="w-full sm:w-auto px-3 py-1.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-lg text-xs font-mono break-all">
                     Workspace: <span id="ws-root">...</span>
                 </span>
             </div>
         </header>
 
-        <!-- Layout 3 Colunas -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Coluna 1: Origens -->
+        <!-- Catálogo de recursos -->
+        <div class="space-y-8">
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-800">
                     <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
                         <span>📁</span> Origens de Dados
+                        <span id="campaigns-count" class="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 text-xs font-mono">0</span>
                     </h2>
                     <button onclick="loadData()" class="text-xs text-indigo-400 hover:underline">🔄 Atualizar</button>
                 </div>
-                <div id="campaigns-list" class="space-y-4">
+                <p class="text-xs text-slate-500">Vídeos, extração de frames e revisões de anotação disponíveis.</p>
+                <div id="campaigns-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     <p class="text-slate-500 text-sm">Carregando origens...</p>
                 </div>
             </div>
 
-            <!-- Coluna 2: Versões -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-800">
                     <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
                         <span>📦</span> Versões do Dataset
+                        <span id="releases-count" class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-xs font-mono">0</span>
                     </h2>
                     <button onclick="loadData()" class="text-xs text-indigo-400 hover:underline">🔄 Atualizar</button>
                 </div>
-                <div id="releases-list" class="space-y-4">
+                <p class="text-xs text-slate-500">Releases, origens combinadas, conteúdo e distribuição dos splits.</p>
+                <div id="releases-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     <p class="text-slate-500 text-sm">Carregando versões...</p>
                 </div>
             </div>
 
-            <!-- Coluna 3: Treinamentos -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col gap-4">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-800">
                     <h2 class="text-xl font-bold text-slate-200 flex items-center gap-2">
                         <span>⚡</span> Treinamentos
+                        <span id="trainings-count" class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 text-xs font-mono">0</span>
                     </h2>
                     <button onclick="loadData()" class="text-xs text-indigo-400 hover:underline">🔄 Atualizar</button>
                 </div>
-                <div id="trainings-list" class="space-y-4">
+                <p class="text-xs text-slate-500">Execuções, dataset utilizado, configuração e modelo resultante.</p>
+                <div id="trainings-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     <p class="text-slate-500 text-sm">Carregando treinamentos...</p>
                 </div>
             </div>
@@ -647,117 +650,209 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             }
         }
 
-        async function loadData() {
-            try {
-                const resW = await fetch('/api/workspace');
-                const ws = await resW.json();
-                document.getElementById('ws-root').innerText = ws.root;
+        function humanizeId(value) {
+            const text = String(value || '').replace(/[_-]+/g, ' ').replace(/\\s+/g, ' ').trim();
+            return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Sem identificação';
+        }
 
-                // Origens
-                const resC = await fetch('/api/sources');
-                const sources = await resC.json();
-                const divC = document.getElementById('campaigns-list');
-                
+        function formatCount(value) {
+            return Number(value || 0).toLocaleString('pt-BR');
+        }
+
+        function formatDate(value) {
+            if (!value) return 'Data não registrada';
+            const date = new Date(value);
+            return Number.isNaN(date.getTime())
+                ? 'Data não registrada'
+                : date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        }
+
+        function shortPath(value) {
+            const parts = String(value || '').replaceAll('\\\\', '/').split('/');
+            return parts[parts.length - 1] || 'não informado';
+        }
+
+        function summaryItem(label, value) {
+            return `<div class="min-w-0">
+                <div class="text-[10px] uppercase tracking-wide text-slate-500">${escapeHtml(label)}</div>
+                <div class="mt-0.5 text-xs font-semibold text-slate-200 break-words">${escapeHtml(String(value))}</div>
+            </div>`;
+        }
+
+        function nextActionLabel(action) {
+            return ({
+                extract: 'Extrair frames',
+                'build-import': 'Preparar anotação',
+                annotate: 'Anotar',
+                'ready-for-release': 'Pronta para release'
+            })[action] || action || 'Estado desconhecido';
+        }
+
+        function evaluationLabel(level) {
+            return ({ pilot: 'Piloto', standard: 'Padrão', robust: 'Robusto', legacy: 'Legado' })[level]
+                || level || 'Não informado';
+        }
+
+        function statusLabel(status) {
+            return ({
+                completed: 'Concluído',
+                in_progress: 'Em execução',
+                running: 'Em execução',
+                queued: 'Na fila',
+                failed: 'Falhou',
+                unknown: 'Estado desconhecido'
+            })[status] || status || 'Estado desconhecido';
+        }
+
+        async function fetchJson(url) {
+            const response = await fetch(url);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || `Falha ao carregar ${url}`);
+            return data;
+        }
+
+        async function loadData() {
+            const divC = document.getElementById('campaigns-list');
+            const divR = document.getElementById('releases-list');
+            const divT = document.getElementById('trainings-list');
+            try {
+                const [ws, sourceIds, versionIds, trainings] = await Promise.all([
+                    fetchJson('/api/workspace'),
+                    fetchJson('/api/sources'),
+                    fetchJson('/api/versions'),
+                    fetchJson('/api/trainings')
+                ]);
+                document.getElementById('ws-root').innerText = ws.root;
+                document.getElementById('campaigns-count').innerText = sourceIds.length;
+                document.getElementById('releases-count').innerText = versionIds.length;
+                document.getElementById('trainings-count').innerText = trainings.length;
+
+                const [sources, versions] = await Promise.all([
+                    Promise.all(sourceIds.map(id => fetchJson(`/api/sources/${encodeURIComponent(id)}`))),
+                    Promise.all(versionIds.map(id => fetchJson(`/api/versions/${encodeURIComponent(id)}`)))
+                ]);
+
                 if (sources.length === 0) {
                     divC.innerHTML = `
-                        <div class="text-center py-8 border border-dashed border-slate-800 rounded-xl">
+                        <div class="md:col-span-2 xl:col-span-3 text-center py-8 border border-dashed border-slate-800 rounded-xl">
                             <p class="text-slate-400 text-sm font-medium">Nenhuma origem criada ainda.</p>
-                            <button onclick="openCreateCampaignModal()" class="mt-3 text-xs text-indigo-400 font-semibold hover:underline">
-                                + Clique aqui para criar a primeira origem
-                            </button>
-                        </div>
-                    `;
+                            <button onclick="openCreateCampaignModal()" class="mt-3 text-xs text-indigo-400 font-semibold hover:underline">+ Criar a primeira origem</button>
+                        </div>`;
                 } else {
-                    let html = '';
-                    for (const sId of sources) {
-                        const resSt = await fetch(`/api/sources/${sId}`);
-                        const st = await resSt.json();
-                        const targetId = st.source_id || st.campaign_id;
-                        
-                        html += `
-                            <div class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-indigo-500/50 hover:bg-slate-800/70 transition group relative">
-                                <div class="flex flex-col gap-2">
-                                    <div class="flex items-start justify-between gap-2">
-                                        <h3 class="font-bold text-indigo-300 text-base group-hover:text-indigo-200 truncate min-w-0 flex-1" title="${escapeHtml(targetId)}">${escapeHtml(targetId)}</h3>
-                                        <div class="flex items-center gap-1.5">
-                                            <span class="px-2 py-0.5 bg-slate-800 text-indigo-400 border border-indigo-500/30 rounded text-[11px] font-semibold whitespace-nowrap">
-                                                ${st.next_action}
-                                            </span>
-                                            <button onclick="deleteSource(event, '${escapeHtml(targetId)}')" title="Excluir origem do disco" class="p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
-                                        </div>
+                    divC.innerHTML = sources.map(st => {
+                        const id = st.source_id || st.campaign_id;
+                        const latest = (st.annotation_revisions || []).at(-1);
+                        const classes = st.classes?.length
+                            ? st.classes.join(', ')
+                            : Object.keys(latest?.class_counts || {}).join(', ') || 'Nenhuma';
+                        return `
+                            <article class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl flex flex-col gap-3 hover:border-indigo-500/50 hover:bg-slate-800/70 transition group min-w-0">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-[10px] uppercase tracking-widest text-indigo-400 font-bold">Origem de dados</div>
+                                        <h3 class="mt-1 font-bold text-slate-100 text-base break-words">${escapeHtml(humanizeId(id))}</h3>
+                                        <div class="mt-1 text-[11px] font-mono text-slate-500 break-all" title="${escapeHtml(id)}">ID: ${escapeHtml(id)}</div>
                                     </div>
-                                    <div class="text-xs text-slate-400">
-                                        Vídeos: <span class="text-slate-200 font-mono font-medium">${st.videos}</span> | 
-                                        Frames: <span class="text-slate-200 font-mono font-medium">${st.frames}</span> | 
-                                        Tasks: <span class="text-slate-200 font-mono font-medium">${st.import_tasks}</span>
-                                    </div>
+                                    <button onclick="deleteSource(event, '${escapeHtml(id)}')" title="Excluir origem do disco" class="shrink-0 p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
                                 </div>
-                                <a href="/source.html?id=${targetId}" class="text-xs text-indigo-400 font-medium pt-1 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                    <span>Ver detalhes e etapas</span> &rarr;
-                                </a>
-                            </div>
-                        `;
-                    }
-                    divC.innerHTML = html;
+                                <div class="flex flex-wrap gap-1.5">
+                                    <span class="px-2 py-0.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded text-[11px] font-semibold">${escapeHtml(nextActionLabel(st.next_action))}</span>
+                                    <span class="px-2 py-0.5 bg-slate-800 text-slate-300 border border-slate-700 rounded text-[11px]">${formatCount(st.annotation_revisions?.length)} revisão(ões)</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-x-4 gap-y-3 py-3 border-y border-slate-800">
+                                    ${summaryItem('Vídeos / unidades', `${formatCount(st.videos)} / ${formatCount(st.capture_units?.length || st.videos)}`)}
+                                    ${summaryItem('Frames / tarefas', `${formatCount(st.frames)} / ${formatCount(st.import_tasks)}`)}
+                                    ${summaryItem('Última revisão', latest?.revision_id || 'Ainda não anotada')}
+                                    ${summaryItem('Caixas anotadas', formatCount(latest?.boxes))}
+                                    <div class="col-span-2">${summaryItem('Classes', classes)}</div>
+                                </div>
+                                <div class="text-[11px] text-slate-500">${escapeHtml(formatDate(st.created_at))}</div>
+                                <a href="/source.html?id=${encodeURIComponent(id)}" class="mt-auto text-xs text-indigo-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">Ver detalhes e etapas &rarr;</a>
+                            </article>`;
+                    }).join('');
                 }
-
-                // Versões
-                const resR = await fetch('/api/versions');
-                const versions = await resR.json();
-                const divR = document.getElementById('releases-list');
 
                 if (versions.length === 0) {
-                    divR.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">Nenhuma versão materializada ainda.</p>';
+                    divR.innerHTML = '<p class="md:col-span-2 xl:col-span-3 text-slate-500 text-sm py-4 text-center">Nenhuma versão criada ainda.</p>';
                 } else {
-                    divR.innerHTML = versions.map(v => `
-                        <div class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-emerald-500/50 hover:bg-slate-800/70 transition group">
-                            <div class="flex items-start justify-between gap-2">
-                                <div class="min-w-0 flex-1 space-y-1">
-                                    <div class="font-bold text-emerald-400 group-hover:text-emerald-300 text-sm truncate" title="${escapeHtml(v)}">${escapeHtml(v)}</div>
-                                    <div class="text-xs text-slate-400">Clique para ver detalhes, splits e treinar</div>
+                    divR.innerHTML = versions.map(v => {
+                        const id = v.version_id || v.release_id;
+                        const report = v.build_report || {};
+                        const splitText = Object.entries(report.splits || {})
+                            .map(([name, count]) => `${name}: ${formatCount(count)}`).join(' · ') || 'Ainda sem splits materializados';
+                        const sourceText = (v.sources || []).join(', ') || 'Origem não registrada';
+                        return `
+                            <article class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl flex flex-col gap-3 hover:border-emerald-500/50 hover:bg-slate-800/70 transition group min-w-0">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Versão do dataset</div>
+                                        <h3 class="mt-1 font-bold text-slate-100 text-base break-words">${escapeHtml(humanizeId(id))}</h3>
+                                        <div class="mt-1 text-[11px] font-mono text-slate-500 break-all" title="${escapeHtml(id)}">ID: ${escapeHtml(id)}</div>
+                                    </div>
+                                    <button onclick="deleteRelease(event, '${escapeHtml(id)}')" title="Excluir release e arquivos do disco" class="shrink-0 p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
                                 </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[11px] font-semibold whitespace-nowrap">Materializada</span>
-                                    <button onclick="deleteRelease(event, '${escapeHtml(v)}')" title="Excluir release e arquivos do disco" class="p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <span class="px-2 py-0.5 ${v.materialized ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'} border rounded text-[11px] font-semibold">${v.materialized ? 'Materializada' : 'Não materializada'}</span>
+                                    <span class="px-2 py-0.5 bg-slate-800 text-slate-300 border border-slate-700 rounded text-[11px]">${escapeHtml(evaluationLabel(v.evaluation_level))}</span>
+                                    ${v.provisional ? '<span class="px-2 py-0.5 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded text-[11px]">Provisória</span>' : ''}
                                 </div>
-                            </div>
-                            <a href="/version.html?id=${v}" class="text-xs text-emerald-400 font-medium pt-1 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                <span>Acessar release</span> &rarr;
-                            </a>
-                        </div>
-                    `).join('');
+                                <div class="grid grid-cols-2 gap-x-4 gap-y-3 py-3 border-y border-slate-800">
+                                    ${summaryItem('Origens combinadas', `${formatCount(v.sources?.length)} origem(ns)`)}
+                                    ${summaryItem('Revisões', `${formatCount(Object.keys(v.annotation_revisions || {}).length)} selecionada(s)`)}
+                                    ${summaryItem('Imagens', v.materialized ? formatCount(report.images) : '—')}
+                                    ${summaryItem('Caixas', v.materialized ? formatCount(report.boxes) : '—')}
+                                    <div class="col-span-2">${summaryItem('Origem(ns)', sourceText)}</div>
+                                    <div class="col-span-2">${summaryItem('Splits (imagens)', splitText)}</div>
+                                    <div class="col-span-2">${summaryItem('Classes', v.classes?.join(', ') || 'Não registradas')}</div>
+                                </div>
+                                <div class="text-[11px] text-slate-500">${escapeHtml(formatDate(v.created_at))}</div>
+                                <a href="/version.html?id=${encodeURIComponent(id)}" class="mt-auto text-xs text-emerald-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">Ver release, splits e treinar &rarr;</a>
+                            </article>`;
+                    }).join('');
                 }
-
-                // Treinamentos
-                const resT = await fetch('/api/trainings');
-                const trainings = await resT.json();
-                const divT = document.getElementById('trainings-list');
 
                 if (!trainings || trainings.length === 0) {
-                    divT.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">Nenhum treinamento realizado ainda.</p>';
+                    divT.innerHTML = '<p class="md:col-span-2 xl:col-span-3 text-slate-500 text-sm py-4 text-center">Nenhum treinamento realizado ainda.</p>';
                 } else {
-                    divT.innerHTML = trainings.map(t => `
-                        <div class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl space-y-2 hover:border-amber-500/50 hover:bg-slate-800/70 transition group">
-                            <div class="flex items-start justify-between gap-2">
-                                <div class="min-w-0 flex-1 space-y-1">
-                                    <div class="font-bold text-amber-400 group-hover:text-amber-300 text-sm truncate font-mono" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</div>
-                                    <div class="text-xs text-slate-400">Modelo: <span class="text-slate-300 font-medium">${escapeHtml(t.model || 'N/A')}</span></div>
+                    divT.innerHTML = trainings.map(t => {
+                        const bestMetrics = t.metrics?.best || t.metrics?.final || {};
+                        const modelTitle = shortPath(t.model || t.initial_model_id || 'YOLO');
+                        const resultModel = t.output_model_id || 'Modelo resultante não registrado';
+                        const metric = typeof bestMetrics.map50_95 === 'number'
+                            ? `${(bestMetrics.map50_95 * 100).toFixed(1)}%`
+                            : 'Não disponível';
+                        return `
+                            <article class="p-4 bg-slate-800/40 border border-slate-800 rounded-xl flex flex-col gap-3 hover:border-amber-500/50 hover:bg-slate-800/70 transition group min-w-0">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-[10px] uppercase tracking-widest text-amber-400 font-bold">Treinamento · ${escapeHtml(modelTitle)}</div>
+                                        <h3 class="mt-1 font-bold text-slate-100 text-base break-words">${escapeHtml(humanizeId(t.name))}</h3>
+                                        <div class="mt-1 text-[11px] font-mono text-slate-500 break-all" title="${escapeHtml(t.name)}">ID: ${escapeHtml(t.name)}</div>
+                                    </div>
+                                    <button onclick="deleteTraining(event, '${escapeHtml(t.name)}')" title="Excluir treinamento do disco" class="shrink-0 p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
                                 </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded text-[11px] font-semibold whitespace-nowrap">${escapeHtml(t.status)}</span>
-                                    <button onclick="deleteTraining(event, '${escapeHtml(t.name)}')" title="Excluir treinamento do disco" class="p-1 text-slate-500 hover:text-rose-400 transition">🗑️</button>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <span class="px-2 py-0.5 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded text-[11px] font-semibold">${escapeHtml(statusLabel(t.status))}</span>
+                                    ${t.state ? `<span class="px-2 py-0.5 bg-slate-800 text-slate-300 border border-slate-700 rounded text-[11px]">${escapeHtml(t.state)}</span>` : ''}
                                 </div>
-                            </div>
-                            <a href="/training.html?id=${encodeURIComponent(t.name)}" class="text-xs text-amber-400 font-medium pt-1 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                                <span>Ver detalhes e métricas</span> &rarr;
-                            </a>
-                        </div>
-                    `).join('');
+                                <div class="grid grid-cols-2 gap-x-4 gap-y-3 py-3 border-y border-slate-800">
+                                    ${summaryItem('Dataset', t.dataset_id || 'Não registrado')}
+                                    ${summaryItem('Modelo base', shortPath(t.model || t.initial_model_id))}
+                                    ${summaryItem('Épocas / resolução', `${t.epochs ?? '—'} / ${t.imgsz ?? '—'} px`)}
+                                    ${summaryItem('Melhor mAP50-95', metric)}
+                                    <div class="col-span-2">${summaryItem('Modelo resultante', resultModel)}</div>
+                                </div>
+                                <div class="text-[11px] text-slate-500">${escapeHtml(formatDate(t.completed_at || t.created_at))}</div>
+                                <a href="/training.html?id=${encodeURIComponent(t.name)}" class="mt-auto text-xs text-amber-400 font-semibold flex items-center gap-1 group-hover:translate-x-1 transition-transform">Ver detalhes, métricas e artefatos &rarr;</a>
+                            </article>`;
+                    }).join('');
                 }
-
             } catch (err) {
                 console.error(err);
-                divC.innerHTML = `<p class="text-rose-400 text-xs p-3">Erro ao carregar origens: ${escapeHtml(err.message)}</p>`;
+                const message = `<p class="text-rose-400 text-xs p-3">Erro ao carregar catálogo: ${escapeHtml(err.message)}</p>`;
+                divC.innerHTML = message;
+                divR.innerHTML = message;
+                divT.innerHTML = message;
             }
         }
 
@@ -2816,7 +2911,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                             <th class="text-left py-2">Métrica</th>
                             <th class="text-right py-2">Teste normal</th>
                             <th class="text-right py-2">Teste de estresse</th>
-                            <th class="text-right py-2">Queda</th>
+                            <th class="text-right py-2" title="Teste de estresse menos teste normal">Variação</th>
                         </tr>
                     </thead>
                     <tbody id="evaluation-metrics-body" class="font-mono text-slate-200"></tbody>
@@ -2953,6 +3048,12 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : '--';
         }
 
+        function formatSignedPercent(value) {
+            if (typeof value !== 'number') return '--';
+            const prefix = value > 0 ? '+' : '';
+            return `${prefix}${(value * 100).toFixed(1)}%`;
+        }
+
         function renderEvaluations(evaluations, robustness) {
             const normal = evaluations.test_normal || {};
             const stress = evaluations.test_stress || {};
@@ -2964,11 +3065,15 @@ def create_web_app(workspace: Workspace) -> FastAPI:
             };
             const rows = Object.entries(labels).map(([key, label]) => {
                 const drop = (robustness[key] || {}).drop_absolute;
+                const variation = typeof drop === 'number' ? -drop : null;
+                const variationClass = variation > 0
+                    ? 'text-emerald-400'
+                    : variation < 0 ? 'text-rose-400' : 'text-slate-400';
                 return `<tr class="border-b border-slate-800/60">
                     <td class="py-2 font-sans">${label}</td>
                     <td class="py-2 text-right">${formatPercent(normal[key])}</td>
                     <td class="py-2 text-right">${formatPercent(stress[key])}</td>
-                    <td class="py-2 text-right ${typeof drop === 'number' && drop > 0 ? 'text-rose-400' : 'text-slate-400'}">${formatPercent(drop)}</td>
+                    <td class="py-2 text-right ${variationClass}">${formatSignedPercent(variation)}</td>
                 </tr>`;
             });
             document.getElementById('evaluation-metrics-body').innerHTML = rows.join('');
@@ -3153,6 +3258,7 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                     load_yaml(registry_path) if registry_path.is_file() else {}
                 )
                 model_name = "YOLO"
+                args = {}
                 if args_yaml.exists():
                     try:
                         args = load_yaml(args_yaml)
@@ -3183,6 +3289,18 @@ def create_web_app(workspace: Workspace) -> FastAPI:
                         "output_model": registered_models.get(
                             registry_run.get("output_model_id"), {}
                         ),
+                        "created_at": registry_run.get("created_at"),
+                        "completed_at": registry_run.get("completed_at"),
+                        "epochs": (registry_run.get("training") or {}).get(
+                            "epochs", args.get("epochs")
+                        ),
+                        "imgsz": (registry_run.get("training") or {}).get(
+                            "imgsz", args.get("imgsz")
+                        ),
+                        "batch": (registry_run.get("training") or {}).get(
+                            "batch", args.get("batch")
+                        ),
+                        "metrics": registry_run.get("metrics", {}),
                     }
                 )
         return items
