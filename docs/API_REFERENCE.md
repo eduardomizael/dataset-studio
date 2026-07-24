@@ -210,34 +210,57 @@ Calcula vídeos, frames e caixas por split antes da criação.
 
 ~~~json
 {
-  "source_id": "origem_01",
-  "revision_id": "rev_001",
+  "sources": ["origem_01", "origem_02"],
+  "annotation_revisions": {
+    "origem_01": "rev_001",
+    "origem_02": "rev_003"
+  },
+  "final_classes": ["peixe"],
+  "class_mapping": {
+    "origem_01": {"peixe": "peixe"},
+    "origem_02": {"fish": "peixe", "bolha": null}
+  },
   "assignments": {
     "train": ["origem_01/video_01.mp4"],
-    "val": ["origem_01/video_02.mp4"],
-    "test_normal": [],
+    "val": ["origem_02/video_02.mp4"],
+    "test_normal": ["origem_02/video_03.mp4"],
     "test_stress": []
   }
 }
 ~~~
+
+A resposta inclui métricas consolidadas, composição por origem e
+`class_resolution` com avisos e quantidade de caixas afetadas.
 
 ### POST /api/versions
 
 ~~~json
 {
   "version_id": "dataset_v1",
-  "sources": ["origem_01"],
-  "annotation_revisions": {"origem_01": "rev_001"},
+  "sources": ["origem_01", "origem_02"],
+  "annotation_revisions": {
+    "origem_01": "rev_001",
+    "origem_02": "rev_003"
+  },
+  "final_classes": ["peixe"],
+  "class_mapping": {
+    "origem_01": {"peixe": "peixe"},
+    "origem_02": {"fish": "peixe", "bolha": null}
+  },
+  "class_mapping_acknowledged": true,
   "assignments": {
     "train": ["origem_01/video_01.mp4"],
-    "val": ["origem_01/video_02.mp4"],
-    "test_normal": ["origem_01/video_03.mp4"],
-    "test_stress": ["origem_01/video_04.mp4"]
+    "val": ["origem_02/video_02.mp4"],
+    "test_normal": ["origem_02/video_03.mp4"],
+    "test_stress": []
   }
 }
 ~~~
 
-Cada vídeo deve aparecer exatamente uma vez. train e val precisam conter frames utilizáveis.
+Cada unidade deve aparecer exatamente uma vez. Diferenças de classes são
+permitidas mediante mapeamento completo e confirmação explícita. Destino
+`null` remove as caixas daquela classe. A origem e sua revisão não são
+modificadas.
 
 ### POST /api/versions/{version_id}/build
 

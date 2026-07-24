@@ -111,7 +111,27 @@ O vínculo fica registrado em `label_studio/integration.json`, com o ID do proje
 
 Ao escolher uma revisão, você entra na montagem da versão (`/version.html`). `release` é mantido como alias legado.
 
-### 1. Divisão por Unidade Experimental (Sem Vazamento / Data Leakage)
+### 1. Composição por múltiplas origens
+
+- Uma release pode combinar uma ou mais origens imutáveis.
+- O usuário escolhe exatamente uma revisão de anotação para cada origem.
+- As unidades são identificadas como `<source_id>/<unit_id>`, evitando colisões.
+- As origens e revisões não são alteradas; a combinação existe somente na release.
+
+Quando as classes são exatamente iguais, a combinação é direta. Havendo
+qualquer diferença, a interface mostra cada classe original e permite:
+
+- manter ou renomear a classe;
+- usar o mesmo nome final para fundir classes;
+- combinar origens com quantidades diferentes de classes;
+- deixar o destino vazio para remover as caixas daquela classe.
+
+A ferramenta apresenta quantas caixas serão convertidas ou removidas e exige
+confirmação. A decisão é permitida mesmo quando pode prejudicar o dataset, mas
+o esquema original, o mapeamento, os avisos e a confirmação ficam registrados
+de forma imutável no `version.yaml` e no relatório de materialização.
+
+### 2. Divisão por Unidade Experimental (Sem Vazamento / Data Leakage)
 - O sistema exige que cada unidade seja atribuída exatamente uma vez a `train`, `val`, `test_normal` ou `test_stress`.
 - Todos os frames de uma leva permanecem juntos. Uma unidade nunca é dividida entre splits.
 - Unidades podem ser vídeos completos ou segmentos independentes de uma captura contínua.
@@ -120,7 +140,7 @@ Ao escolher uma revisão, você entra na montagem da versão (`/version.html`). 
   densidade, reflexos ou movimento atípicos. Ele mede robustez e não deve ser
   usado para escolher parâmetros, épocas ou pesos.
 
-### 2. Níveis de avaliação
+### 3. Níveis de avaliação
 
 - `pilot`: exige apenas treino. Permite começar com uma única unidade, mas usa
   o treino como validação técnica e não comprova generalização.
@@ -131,7 +151,7 @@ A ferramenta bloqueia splits obrigatórios vazios ou sem frames utilizáveis.
 Quantidades baixas de frames e caixas geram avisos heurísticos, não uma falsa
 garantia estatística.
 
-### 3. Materialização
+### 4. Materialização
 - Ao clicar em **`🔨 Materializar Dataset`**, o sistema constrói tudo em staging e só publica após sucesso integral. São gerados `data.yaml`, `data_test_stress.yaml` quando aplicável, `manifest.csv`, `build_report.json`, imagens e labels YOLO.
 - Uma versão materializada não pode ser reconstruída ou editada no mesmo ID. Para mudar revisão ou splits, crie outra versão.
 

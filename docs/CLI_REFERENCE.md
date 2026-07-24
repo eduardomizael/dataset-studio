@@ -71,9 +71,27 @@ uv run --all-extras dataset-studio version create --id dataset_v1 --sources orig
 
 Observações:
 
-- Todos os vídeos precisam aparecer exatamente uma vez.
-- train e val são obrigatórios.
-- A CLI seleciona a revisão disponível conforme as regras atuais do domínio. Para escolher explicitamente uma revisão por origem, use a interface ou a API.
+- Todas as unidades precisam aparecer exatamente uma vez.
+- Os splits obrigatórios dependem de `--evaluation-level`.
+- `--annotation-revisions-json` escolhe uma revisão por origem.
+- `--class-mapping-json` recebe `origem -> classe original -> classe final`.
+  Use `null` para ignorar uma classe.
+- `--final-classes` define a ordem final dos IDs.
+- Alterações semânticas exigem `--acknowledge-class-mapping`.
+
+Exemplo com fusão e descarte:
+
+~~~powershell
+uv run --all-extras dataset-studio version create `
+  --id dataset_combinado `
+  --sources origem_a origem_b `
+  --evaluation-level pilot `
+  --annotation-revisions-json '{"origem_a":"rev_01","origem_b":"rev_02"}' `
+  --assignments-json '{"train":["origem_a/leva_01","origem_b/leva_02"],"val":[],"test_normal":[],"test_stress":[]}' `
+  --class-mapping-json '{"origem_a":{"peixe":"peixe"},"origem_b":{"fish":"peixe","bolha":null}}' `
+  --final-classes peixe `
+  --acknowledge-class-mapping
+~~~
 
 ### version list
 
@@ -170,6 +188,5 @@ A CLI ainda não expõe:
 - escolha completa dos parâmetros da extração inteligente;
 - início do Label Studio e ML Backend;
 - prévia de impacto e exclusões;
-- escolha explícita de annotation_revisions no version create.
 
 Use a API REST ou o painel web para essas operações. Não edite YAMLs ou artefatos fixados manualmente.

@@ -138,7 +138,8 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
    - `label_studio/revisions/<revision_id>/`: Exportação aceita e relatório imutável.
 
 2. **`dataset/versions/<version_id>/`**:
-   - `version.yaml`: Revisões escolhidas e atribuição de vídeos aos quatro splits.
+   - `version.yaml`: Origens, revisões, esquema final, mapeamento confirmado de
+     classes e atribuição das unidades aos quatro splits.
    - `data.yaml`: Arquivo de configuração YOLO gerado na materialização.
    - `data_test_stress.yaml`: Avaliação específica do split de estresse, quando existente.
    - `manifest.csv`: Manifesto tabular da release.
@@ -188,6 +189,9 @@ Durante o uso, o **Dataset Studio** lê e grava dados dentro da raiz do workspac
 - A predição automática prioriza cobertura total; cobertura parcial exige confirmação explícita.
 - Consultas `GET` não aceitam exportações nem criam revisões.
 - Cada revisão é um snapshot explícito de uma exportação nativa do Label Studio.
+- Uma release pode compor múltiplas origens sem alterá-las. Diferenças de
+  classes exigem um mapeamento total e confirmação, mas renomeações, fusões,
+  ausências e descartes são decisões permitidas e auditadas.
 - Uma versão exige todas as unidades experimentais atribuídas exatamente uma
   vez entre `train`, `val`, `test_normal` e `test_stress`.
 - A unidade de independência é `unit_id`: vídeo completo legado ou segmento
